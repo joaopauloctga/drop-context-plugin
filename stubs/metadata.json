@@ -1,0 +1,10 @@
+{
+  "last_update": "",
+  "modules": [
+    {
+      "machine_name": "example",
+      "releases": ["tag1", "tag2", "etc"],
+      "last_update": "last_update_here"
+    }
+  ]
+}
