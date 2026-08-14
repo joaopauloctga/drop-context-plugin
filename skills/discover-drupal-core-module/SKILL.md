@@ -67,7 +67,7 @@ MODULE=<machine name>
 VERSION=<resolved core version>
 MODULE_ROOT=<absolute path to the cached dir containing the .info.yml>
 OUTPUT_DIR=<~/.drupal-context/core/<version>/<module>>
-DATE_EPOCH=<unix epoch seconds — used for metadata.json in step 5>
+DATE_EPOCH=<unix epoch seconds — used for metadata.json in step 6>
 SUBMODULE=<machine name>|<dir relative to MODULE_ROOT>   (one line per submodule)
 SUBMODULES=<count>
 ```
@@ -91,22 +91,29 @@ contrib does. If `SUBMODULES=0`, skip the submodules explorer and the
 `submodules/` output entirely, and the rest of this skill runs exactly as it
 does for a single-module project.
 
-## 2. Spawn the explorer team — in parallel
+## 2. Spawn wave 1 — Explorers A, B (and D) in parallel
 
 **Only reach this step if the GATE in step 1 printed `GATE OK`.** If you do not
 have a verified `MODULE_ROOT`, go back — do not spawn.
 
-Launch **three** `drupal-module-explorer` subagents (**or four — add Explorer D
+The explorer team runs in **two waves**. Wave 1 covers the factual categories —
+A, B, and D when there are submodules — in parallel. Explorer C (the synthesis
+categories `extension-points` and `ai-integration`) runs in step 4, **after**
+wave 1's files are on disk, and uses them as its verified fact base; that
+ordering is what keeps the synthesis files consistent with the facts they build
+on.
+
+Launch **two** `drupal-module-explorer` subagents (**or three — add Explorer D
 when the GATE found submodules**, i.e. `SUBMODULES` > 0) **in a single batch so
 they run concurrently**, each assigned a disjoint set of categories. Give every
 explorer the same `MODULE_ROOT` and `OUTPUT_DIR`, the machine name
 (`MODULE`), and the version (`VERSION` — for a core module the "release" is
 the core version); assign work as below.
 
-- **Claude Code**: make three (or four) `Task` (Agent) calls with
+- **Claude Code**: make two (or three) `Task` (Agent) calls with
   `subagent_type: drupal-module-explorer` in one turn.
 
-Use this prompt template for each category explorer (A/B/C) — **substitute the
+Use this prompt template for each wave-1 category explorer (A/B) — **substitute the
 real `MODULE_ROOT` and `OUTPUT_DIR` the gate printed, plus the real module
 machine name and the version. Do not pass literal placeholder strings to the
 explorer; they cannot resolve them and will get lost searching the
@@ -122,11 +129,10 @@ manifest and the END marker."*
 | ------------------- | ----------------------------------------------------- |
 | **A — metadata/UI** | `key-facts`, `configuration`, `permissions`, `routes` |
 | **B — code/API**    | `entities`, `plugins`, `services`, `hooks`, `events`  |
-| **C — extension**   | `extension-points`, `ai-integration`                  |
 | **D — submodules**  | `submodules` task (**only if `SUBMODULES` > 0**)      |
 
-(Explorer C reads the same source as B to write high-fidelity extension
-guidance; the overlapping reads are intentional, the price of parallelism.)
+(Explorer C is **not** part of this batch — it runs in step 4, after these
+files exist.)
 
 **Explorer D** runs the dedicated `submodules` task: it writes one condensed
 `submodules/<sub_machine>.md` file per submodule. Pass it the full list of
@@ -135,7 +141,7 @@ directory). Use this prompt template:
 
 > Explore the submodules of the Drupal core module whose source is at the path `<MODULE_ROOT>` (parent machine name `<MODULE>`, release `<VERSION>`). Run the **submodules task**: for each submodule below, read that submodule's own subdirectory (plus targeted parent-module lookups for symbols the submodule references but does not define, per your `submodules` catalog entry) and write one condensed file `<OUTPUT_DIR>/submodules/<sub_machine>.md` (per that catalog entry and your Output Contract — each file starts with its H1, no metadata header; write nothing anywhere else). The submodules are: `<sub_machine_1>` at `<dir_1>`, `<sub_machine_2>` at `<dir_2>`, … Then return your final message as the `=== MANIFEST ===` block (one JSON entry per submodule file), ending with `=== END ===`. Nothing else.
 
-## 3. Collect the manifests
+## 3. Collect the wave-1 manifests
 
 Each explorer's final message is a `=== MANIFEST ===` block holding a JSON
 array — one entry per file it wrote, with `file`, `category`, `title`, and
@@ -148,7 +154,25 @@ do not fabricate the missing categories. If an explorer's manifest is missing
 some assigned category (or a submodule), spawn **one** follow-up explorer for
 just the missing pieces before giving up.
 
-## 4. Build `summary.md` yourself
+## 4. Spawn Explorer C — the synthesis wave
+
+Only after every wave-1 manifest is collected and its files are on disk, launch
+**one** more `drupal-module-explorer` for the synthesis categories. Use this
+prompt template — substitute the real values as before:
+
+> Explore the Drupal core module whose source is at the path `<MODULE_ROOT>` (machine name `<MODULE>`, release `<VERSION>`). Cover **only** these categories: **extension-points, ai-integration**. These are synthesis categories — follow your "Synthesis categories (fact grounding)" rules: first read the category files already present in the output directory `<OUTPUT_DIR>` and treat them as your verified fact base; read the module source for the guidance layer and for anything they do not cover. Write one Markdown file per assigned category directly into `<OUTPUT_DIR>`, per your Output Contract — each file starts with its `# …` H1, no metadata header; write nothing anywhere else and never modify the module source. Then return your final message as the `=== MANIFEST ===` block (one JSON entry per file you wrote), plus a `=== DISCREPANCIES ===` block only if you verified that a fact in an existing category file contradicts the source, ending with `=== END ===`. Nothing else.
+
+Collect its manifest like the others. **If it returned a non-empty
+`=== DISCREPANCIES ===` block**, each entry is a disputed fact that Explorer C
+verified against the source and found wrong in a wave-1 file (C's own files
+already carry the source-verified version). Spawn **one** follow-up explorer
+assigned to the affected category file(s), passing the disputed point(s)
+verbatim, to re-check the source at the cited location and rewrite the affected
+file(s) if the dispute is confirmed. Never resolve a dispute by editing a
+category file yourself, and never ignore one silently — if it cannot be
+resolved, call it out in your final report.
+
+## 5. Build `summary.md` yourself
 
 Explorers do not produce `summary.md`. Build it from Explorer A's key-facts and
 include an index linking every file, then write it to `OUTPUT_DIR/summary.md`.
@@ -196,7 +220,7 @@ of what the submodule adds to the parent — derive that line from the manifest
 - …
 ```
 
-## 5. Write `metadata.json`
+## 6. Write `metadata.json`
 
 All per-file metadata lives in a single `OUTPUT_DIR/metadata.json` — the doc
 files themselves carry none. Assemble it from the gate values and the
@@ -228,22 +252,28 @@ reported (all 10 category files, and one `submodules/<sub_machine>.md` per
 submodule when there are submodules). `date` is the `DATE_EPOCH` from the gate
 (Unix epoch seconds). `version` is the resolved core tag.
 
-## 6. Verify and report
+## 7. Verify and report
 
 Run the bundled verifier (it sits next to this SKILL.md) — it cross-checks
 `metadata.json` against the disk in both directions (all 11 doc files
 present, listed, and non-empty; no unlisted files; valid categories;
-submodule count matching the GATE):
+submodule count matching the GATE), and — via `--module-root` — validates
+every `Drupal\<module>\…` class reference in the docs against the source by
+PSR-4, so an invented class name fails the verify:
 
 ```bash
-python3 "$SKILL_DIR/verify.py" "$OUTPUT_DIR" --submodules <SUBMODULES>
+python3 "$SKILL_DIR/verify.py" "$OUTPUT_DIR" --submodules <SUBMODULES> --module-root "$MODULE_ROOT"
 ```
 
 - **`VERIFY OK`** → done.
 - **`VERIFY FAILED`** → fix what the `PROBLEM:` lines say: if a file an
   explorer reported is missing (or one was written but not reported), spawn
   one follow-up explorer for just that piece, update `metadata.json`, and
-  re-run the verifier. Call out anything still unresolved.
+  re-run the verifier. An **unresolvable class reference** PROBLEM means a doc
+  names a class that does not exist in the source — treat it like a
+  discrepancy: spawn one follow-up explorer for the affected category file to
+  correct or remove the reference (never edit the file yourself), then re-run.
+  Call out anything still unresolved.
 
 Then report back concisely: the `OUTPUT_DIR` path, the resolved core
 `VERSION`, the count of category and submodule files written, and a one-line

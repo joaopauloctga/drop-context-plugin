@@ -1,21 +1,30 @@
 #!/usr/bin/env python3
-"""Verify a discover output directory (step 6 of the discover skills).
+"""Verify a discover output directory (step 7 of the discover skills).
 
-    python3 verify.py <OUTPUT_DIR> [--submodules N]
+    python3 verify.py <OUTPUT_DIR> [--submodules N] [--module-root PATH]
 
 Cross-checks metadata.json against the files on disk in both directions:
 every required doc file present, listed, and non-empty; no unlisted files;
 valid categories; submodule file count matching the GATE's SUBMODULES.
-Standard library only.
 
-Prints WARNING/PROBLEM lines, then either "VERIFY OK" (exit 0) or
-"VERIFY FAILED (n problem(s))" (exit 1).
+With --module-root (the GATE's MODULE_ROOT), additionally validates every
+``Drupal\\<module>\\...`` class reference found in the generated docs against
+the module source via PSR-4 (``Drupal\\m\\X\\Y`` -> ``src/X/Y.php``; submodule
+namespaces map to the submodule's own ``src/``). A reference that resolves to
+neither a class file nor a namespace directory is reported as a PROBLEM — it
+usually means a doc names a class that does not exist. References outside the
+module's own namespaces (``Drupal\\Core\\...``, other modules, example
+namespaces) are skipped: they cannot be checked against this source.
+
+Standard library only. Prints WARNING/PROBLEM lines, then either "VERIFY OK"
+(exit 0) or "VERIFY FAILED (n problem(s))" (exit 1).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -36,6 +45,59 @@ VALID_CATEGORIES = set(CORE_FILES.values()) | {"Submodule"}
 REQUIRED_META_KEYS = ("name", "human_name", "type", "version", "date", "files")
 REQUIRED_FILE_KEYS = ("file", "category", "title", "description")
 
+FQCN_RE = re.compile(
+    r"Drupal\\((?:[A-Za-z_][A-Za-z0-9_]*)(?:\\[A-Za-z_][A-Za-z0-9_]*)+)"
+)
+
+
+def check_fqcns(
+    d: Path, module_root: Path, module_name: str, submodules: list[str]
+) -> tuple[list[str], int]:
+    """Validate Drupal\\<ext>\\... references in *.md files against the source."""
+    ns_roots: dict[str, Path] = {module_name: module_root}
+    for sub in submodules:
+        info = next(
+            (
+                p
+                for p in sorted(module_root.glob(f"**/{sub}.info.yml"))
+                if "tests" not in p.parts and "test" not in p.parts
+            ),
+            None,
+        )
+        if info is not None:
+            ns_roots[sub] = info.parent
+
+    problems: list[str] = []
+    seen: set[str] = set()
+    checked = 0
+    for md in sorted(d.rglob("*.md")):
+        # Audit reports may cite invented FQCNs as examples of errors.
+        if md.name.startswith("audit-"):
+            continue
+        # Docs sometimes write PHP-string style double backslashes; normalize.
+        text = md.read_text(encoding="utf-8", errors="replace").replace("\\\\", "\\")
+        for m in FQCN_RE.finditer(text):
+            segs = m.group(1).split("\\")
+            ext, rest = segs[0], segs[1:]
+            if ext not in ns_roots or not rest:
+                continue
+            fqcn = "Drupal\\" + m.group(1)
+            if fqcn in seen:
+                continue
+            seen.add(fqcn)
+            checked += 1
+            base = ns_roots[ext] / "src"
+            as_file = base.joinpath(*rest).with_suffix(".php")
+            as_dir = base.joinpath(*rest)
+            if not as_file.is_file() and not as_dir.is_dir():
+                rel = md.relative_to(d)
+                problems.append(
+                    f"{rel}: unresolvable class reference {fqcn} "
+                    f"(neither src/{'/'.join(rest)}.php nor that namespace dir "
+                    f"exists under the {ext} source)"
+                )
+    return problems, checked
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -45,6 +107,13 @@ def main() -> int:
         type=int,
         default=None,
         help="Expected submodule file count (the GATE's SUBMODULES value).",
+    )
+    ap.add_argument(
+        "--module-root",
+        type=Path,
+        default=None,
+        help="Module source root (the GATE's MODULE_ROOT); enables validation of "
+        "Drupal\\<module>\\... class references in the docs against the source.",
     )
     args = ap.parse_args()
 
@@ -108,7 +177,12 @@ def main() -> int:
                 elif cat not in VALID_CATEGORIES:
                     problems.append(f"{f}: unknown category {cat!r}")
 
-    on_disk = {str(p.relative_to(d)) for p in d.rglob("*.md")}
+    # audit-*.md files are auditor reports, not part of the generated doc set.
+    on_disk = {
+        str(p.relative_to(d))
+        for p in d.rglob("*.md")
+        if not p.name.startswith("audit-")
+    }
 
     for f in sorted(CORE_FILES):
         if f not in on_disk:
@@ -137,6 +211,25 @@ def main() -> int:
     if meta_ok and sub_listed != sub_on_disk:
         problems.append(f"submodule files listed: {sub_listed}, on disk: {sub_on_disk}")
 
+    fqcn_checked: int | None = None
+    if args.module_root is not None:
+        if not args.module_root.is_dir():
+            problems.append(f"--module-root does not exist: {args.module_root}")
+        elif meta_ok and isinstance(meta.get("name"), str) and meta["name"]:
+            submodule_names: list[str] = []
+            if isinstance(meta.get("files"), list):
+                submodule_names = sorted(
+                    {
+                        e["submodule"]
+                        for e in meta["files"]
+                        if isinstance(e, dict) and e.get("submodule")
+                    }
+                )
+            fqcn_problems, fqcn_checked = check_fqcns(
+                d, args.module_root, meta["name"], submodule_names
+            )
+            problems.extend(fqcn_problems)
+
     for w in warnings:
         print(f"WARNING: {w}")
     if problems:
@@ -147,6 +240,8 @@ def main() -> int:
 
     print(f"CORE_FILES={len(CORE_FILES)}")
     print(f"SUBMODULE_FILES={sub_on_disk}")
+    if fqcn_checked is not None:
+        print(f"FQCN_CHECKED={fqcn_checked}")
     print("VERIFY OK")
     return 0
 
