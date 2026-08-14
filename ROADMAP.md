@@ -157,6 +157,24 @@ depending on the CLI. Parked.
 
 ## Done
 
+- **Generate-skill verifier (structure + docs-grounding)** — 2026-08-14. The
+  generate step is synthesis — the error class where all discover
+  hallucination concentrated — but its verify step was manual `ls`/`wc`. New
+  `generate-module-skill/scripts/verify.py` (stdlib-only, single copy — the
+  core variant runs it from the contrib skill it already requires): checks
+  frontmatter (name/metadata keys, module+version+type matched against the
+  docs' `metadata.json`), the mandatory verify-installed section, the
+  reference routing table vs disk both directions, sibling cross-links,
+  stub/empty files, line caps, leftover `{placeholder}` tokens — and
+  **grounding**: every `Drupal\<module>\…` FQCN and module-named `hook_*` in
+  the generated skill must appear verbatim in the discover docs (PROBLEM);
+  module-prefixed dotted IDs missing from the docs are WARNINGs. The
+  grounding corpus excludes `audit-*.md` (an auditor may quote an invented
+  identifier as an error example). Acceptance-tested on fixtures grounded in
+  the better_exposed_filters 7.1.3 docs: clean fixture passes; 9/9 seeded
+  error classes caught, zero false positives. SKILL.md step 8 rewritten to
+  run it; step 7 gained "identifiers verbatim" + "carry hedges forward"
+  rules.
 - **FQCN validation in verify.py** — 2026-08-13. `--module-root` flag: every
   `Drupal\<module>\…` (and submodule-namespace) class reference in the docs
   must resolve via PSR-4 to a class file or namespace dir in the source;

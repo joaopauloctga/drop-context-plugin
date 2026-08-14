@@ -10,10 +10,13 @@ explains what everything is and how to run it; this file is the rules.
   the symlinks, and when adding a new *pipeline* skill, symlink it into
   **both** `.claude/skills/` and `.agents/skills/` or it won't load.
   `boost-*` / `dc-*` skills are generated products and are **not** symlinked.
-- **`verify.py` exists in two copies** that must stay identical:
+- **The discover `verify.py` exists in two copies** that must stay identical:
   `skills/discover-drupal-module/scripts/verify.py` (canonical) and
   `skills/discover-drupal-core-module/verify.py`. After editing the canonical
-  one, `cp` it over the core copy.
+  one, `cp` it over the core copy. (The **generate** verifier,
+  `skills/generate-module-skill/scripts/verify.py`, is deliberately
+  single-copy: `generate-core-module-skill` requires the contrib skill
+  alongside and runs the script from there — do not fork a core copy.)
 - **Do not break the machine-parseable output contracts.** Orchestrating
   skills parse these mechanically: the `GATE OK` block (download scripts), the
   `VERIFY OK` / `PROBLEM:` lines (verify.py), and the explorer's
@@ -35,7 +38,7 @@ explains what everything is and how to run it; this file is the rules.
    free.
 3. **Validate with the A/B protocol** (in the history doc): same module +
    model + effort before/after, audit both runs with
-   `prompts/audit-discover-docs.md`, score errors by taxonomy class.
+   the `audit-discover-docs` skill, score errors by taxonomy class.
 4. Prefer **promoting a check into a script** (verify.py) over adding prose
    rules when the check is mechanizable — deterministic beats instructed.
 5. Every new "also inspect X" instruction needs an **owning category** that
@@ -45,7 +48,7 @@ explains what everything is and how to run it; this file is the rules.
 
 ## Auditing generated output
 
-- Use `prompts/audit-discover-docs.md`. It is **read-only** over docs, skills,
+- Use the `audit-discover-docs` skill. It is **read-only** over docs, skills,
   and agent; audit report files are saved **outside** the docs directory
   (`audit-*.md` inside an output dir would be flagged by verify.py, which
   ignores that prefix only defensively).

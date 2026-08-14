@@ -10,11 +10,11 @@ the workspace (`.claude/`, `.agents/`) only symlinks back here.
 | --- | --- |
 | `skills/discover-drupal-module/` | Discover a **contrib** module → category docs + `metadata.json`. Bundles its own downloader (`scripts/download.py`) and verifier (`scripts/verify.py`). |
 | `skills/discover-drupal-core-module/` | Same for **core** modules (sparse-downloads only the module subtree). Keeps its own copies of the scripts. |
-| `skills/generate-module-skill/` / `generate-core-module-skill/` | Turn discovered docs into an installable `dc-<module-name>` agent skill. |
+| `skills/generate-module-skill/` / `generate-core-module-skill/` | Turn discovered docs into an installable `dc-<module-name>` agent skill. Bundles its own verifier (`scripts/verify.py`) that checks the generated skill's structure and grounds every identifier in it against the discover docs; the core variant reuses the contrib copy. |
 | `skills/discover-module-release/` | Release-notes discovery for a module version. |
 | `skills/boost-*/` | Legacy generated skills (the pipeline's *product*, not tools — being replaced by `dc-*` naming). |
 | `agents/drupal-module-explorer.md` | The worker agent the discover skills orchestrate. All exploration methodology, category contracts, and output contracts live here. |
-| `prompts/audit-discover-docs.md` | Reusable prompt for a deep quality audit of generated docs. |
+| `skills/audit-discover-docs/` | Deep, read-only quality audit of generated discover docs — verifies claims against the module source and delivers a `path:line`-evidenced report. |
 | `ROADMAP.md` | Deferred improvement ideas, with date + context. |
 | `IMPROVEMENT-HISTORY.md` | The distilled record of past improvement rounds — **read it before changing the discover skills or the explorer agent.** |
 
@@ -27,6 +27,7 @@ runner that loads `SKILL.md` files):
 /discover-drupal-module <machine_name> [<version>]     # e.g. flag 5.0.3 — version optional, defaults to latest stable
 /discover-drupal-core-module <machine_name> [<core_version>]
 /generate-module-skill <machine_name> [<version>]      # run after discover
+/audit-discover-docs <machine_name> [<version>]        # deep QA of a discover run (read-only)
 ```
 
 What a discover run does, in order:
@@ -75,8 +76,9 @@ Three layers, cheapest first:
    cite dispatch sites as `Class::method()`; any "N hooks/plugins" count
    should be recountable; submodule docs must not contain "presumably".
 
-3. **Deep audit** — paste `prompts/audit-discover-docs.md` (filling in module,
-   version, contrib|core) into a fresh session. It encodes the full audit
+3. **Deep audit** — run `/audit-discover-docs <module> [<version>]` (it
+   auto-detects contrib vs core and defaults to the newest discovered
+   version). It encodes the full audit
    protocol: verify claims against source at the line level, the
    nonexistence rule (inheritance-aware — never trust a single grep), cross-
    file consistency, orphan/procedural completeness sweeps, and a report

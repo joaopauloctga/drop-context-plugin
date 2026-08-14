@@ -4,8 +4,8 @@ Background for future skill-improvement sessions. This is the distilled record
 of the 2026-08-13 improvement series (7 discover runs, 7 audits, ~10 shipped
 changes). Read this before touching `discover-drupal-module`,
 `discover-drupal-core-module`, or `agents/drupal-module-explorer.md`.
-Deferred work lives in `ROADMAP.md`; the reusable audit prompt in
-`prompts/audit-discover-docs.md`.
+Deferred work lives in `ROADMAP.md`; the reusable audit protocol in
+the `audit-discover-docs` skill.
 
 ## Current architecture (as of 2026-08-13)
 
@@ -94,7 +94,7 @@ construction*, not by review.
 
 1. Pick one module; run discover **before** the change and **after**, same
    model + effort (Sonnet high is the baseline).
-2. Audit both with `prompts/audit-discover-docs.md` (focus: the two C files;
+2. Audit both with the `audit-discover-docs` skill (focus: the two C files;
    ≥20 verified claims; nonexistence rule; cross-file consistency).
 3. Score errors **by taxonomy class**, and for each error check whether the
    truth already existed in wave-1 files — that tells you whether the failure
@@ -109,7 +109,7 @@ construction*, not by review.
   `download-core-module.sh`, `verify.py`).
 - Agent: `ai/agents/drupal-module-explorer.md` — catalog, sweep, synthesis
   grounding rules, Output Contract (MANIFEST / KEY-FACTS / DISCREPANCIES).
-- Audit prompt: `ai/prompts/audit-discover-docs.md`.
+- Audit skill: `ai/skills/audit-discover-docs/`.
 - Deferred work: `ai/ROADMAP.md`.
 - Output: docs `~/.drupal-context/{modules,core}/…` + `metadata.json`;
   source cache `${TMPDIR}/drupal-context-<user>/…`.

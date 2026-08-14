@@ -168,3 +168,16 @@ offer to install into the project's agent skills directory (step 9) —
 the same file names and the same `metadata.json` shape for core modules as for
 contrib (`"type": "core"`, and the version is the core tag), so those steps
 need no changes.
+
+One path note for step 8: the bundled verifier ships with the contrib skill —
+run it from there (this variant deliberately keeps no copy, since the contrib
+skill is required alongside). With `DOCS_DIR` set to the core docs dir from
+step 1, the script needs nothing else: it reads `"type": "core"` from
+`metadata.json` and expects `skill_type: core_module`, and its verify-installed
+check only requires the `moduleExists('{module}')` line, which this variant's
+template also contains.
+
+```bash
+python3 "<dir containing this SKILL.md>/../generate-module-skill/scripts/verify.py" \
+  "$SKILL_OUT" --docs-dir "$DOCS_DIR" --name "$SKILL_NAME"
+```

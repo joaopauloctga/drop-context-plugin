@@ -340,28 +340,60 @@ module does not ship sample config; see Drupal core's `field.field.*`
 documentation for the surrounding config schema") rather than fabricate
 an example. Wrong examples are worse than missing ones.
 
-## 8. Verify
+Two rules that make step 8's grounding check work for you:
+
+- **Write identifiers exactly as the docs spell them** — full FQCNs
+  (`Drupal\{module}\…`), exact hook names, exact service/route/config IDs.
+  The verifier greps the discover docs for every identifier you use; a
+  paraphrased, abbreviated, or re-assembled identifier fails the check
+  even when your intent was right.
+- **Carry hedges forward.** When a discover doc qualifies a fact —
+  "declared but not invoked in this release", "not verified" — the
+  generated skill must keep that qualifier next to the fact (or drop the
+  fact entirely). Never promote a hedged fact into working guidance: the
+  discover pipeline hedged it because the source did not support more.
+
+## 8. Verify — run the bundled checker
+
+The verifier lives in `scripts/` next to this SKILL.md — resolve `SKILL_DIR`
+to the **absolute path of the directory containing this SKILL.md** (you know
+it from where this skill was loaded); never assume a fixed project-relative
+location. It is standard-library-only Python: any `python3` works, nothing
+to install.
 
 ```bash
-ls -1 "$SKILL_OUT"
-ls -1 "$SKILL_OUT/references"
-wc -l "$SKILL_OUT/SKILL.md" "$SKILL_OUT/references/"*.md
+SKILL_DIR="<absolute path of the directory containing this SKILL.md>"
+python3 "$SKILL_DIR/scripts/verify.py" "$SKILL_OUT" --docs-dir "$DOCS_DIR" --name "$SKILL_NAME"
 ```
 
-Confirm:
+It checks **structure** — frontmatter (`name` equals `$SKILL_NAME`,
+kebab-case `dc-*`; every mandatory `metadata` key present and matching the
+docs' `metadata.json` module/version/type), the mandatory verify-installed
+section, the reference routing table vs `references/` on disk in both
+directions, sibling cross-links, no empty or stub files, the SKILL.md line
+caps, and leftover `{placeholder}` tokens — and **grounding**: every
+`Drupal\{module}\…` FQCN and every module-named `hook_*` you wrote must
+appear verbatim in the discover docs; module-prefixed dotted identifiers
+(service IDs, route names, config keys) missing from the docs come back as
+warnings.
 
-- `SKILL.md` exists, has the correct frontmatter (`name` equals
-  `$SKILL_NAME` — kebab-case, `dc-` prefix — and `metadata` carries all
-  mandatory keys: `module` with the real machine name, `version` matching
-  `$VERSION`, `generated_at` matching `$GEN_DATE`, `generated_from`), and is
-  under ~300 lines.
-- `SKILL.md` contains the **"Step 1 — Verify … is installed"** section,
-  placed before the 80%-path example, with the `moduleExists` check and the
-  stop-and-ask-the-user instruction. This section is mandatory.
-- Every reference listed in `SKILL.md` §"Lazy-loaded references" exists
-  on disk under `references/`, and vice versa — no dangling links, no
-  orphan files.
-- No reference file is empty or a near-empty stub.
+- **`VERIFY OK`** → continue to step 9.
+- **`PROBLEM:` lines** → each one is a defect in what you wrote; fix it in
+  the generated skill and re-run until `VERIFY OK`. For a grounding
+  problem, re-open the relevant discover doc, find the identifier the docs
+  actually use, and correct the skill — and if the docs simply do not
+  contain it, **delete the claim** (step 7: wrong examples are worse than
+  missing ones). Never resolve a grounding problem by editing the discover
+  docs — they are the fact base, owned by the discover pipeline.
+- **`WARNING:` lines** → judgment calls the script cannot make. Re-check
+  each flagged identifier against the docs: fix real mistakes; if you keep
+  one, say so in your final report with the doc line that justifies it.
+
+The script cannot judge prose. Before moving on, re-read two things
+yourself: the frontmatter `description` (other agents select this skill by
+that sentence alone — does it name the module and the concrete tasks?), and
+the **"Step 1 — Verify … is installed"** placement (it must come before the
+80%-path example, with the stop-and-ask-the-user instruction intact).
 
 ## 9. Offer to install into the project's agent skills directory
 
