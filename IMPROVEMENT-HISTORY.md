@@ -7,24 +7,37 @@ changes). Read this before touching `discover-drupal-module`,
 Deferred work lives in `ROADMAP.md`; the reusable audit protocol in
 the `audit-discover-docs` skill.
 
-## Current architecture (as of 2026-08-13)
+## Current architecture (as of 2026-08-17)
 
 1. **Download + GATE** — one bundled script run (`scripts/download.py` /
    `download-core-module.sh`): fetch → validate `.info.yml` → create
    OUTPUT_DIR → enumerate submodules → machine-parseable `GATE OK` block.
-2. **Wave 1** — Explorers A (key-facts/configuration/permissions/routes),
-   B (entities/plugins/services/hooks/events), D (submodules, if any) in
-   parallel. Each writes its files directly and returns a JSON manifest.
-3. **Wave 2** — Explorer C (extension-points + ai-integration, the *synthesis*
-   categories) runs **after** wave 1, reads those files as its verified fact
-   base, reads source only for the guidance layer and facts the base lacks,
-   and reports conflicts via an optional `=== DISCREPANCIES ===` block →
-   orchestrator spawns one follow-up explorer to fix the disputed file.
-4. **Orchestrator** writes `summary.md` + `metadata.json` only.
-5. **Verify** — `scripts/verify.py OUTPUT_DIR --submodules N --module-root
-   MODULE_ROOT`: metadata/file cross-checks both directions **plus PSR-4
-   validation of every `Drupal\<module>\…` FQCN in the docs** (submodule
-   namespaces resolve to their own `src/`, found via `<sub>.info.yml`).
+2. **Wave 1** — Explorers A (key-facts/configuration/permissions/routes) and
+   B (entities/plugins/services/hooks/events) in parallel
+   (`drupal-module-explorer`). Each writes its files directly and returns a
+   JSON manifest.
+3. **Submodule wave** — `drupal-submodule-explorer` batches (≤8 submodules
+   each, parallel) run **after** wave 1: the agent is grounded by design —
+   it requires the category files in OUTPUT_DIR and copies parent-symbol
+   facts from them (targeted parent grep only as fallback), writes condensed
+   `submodules/*.md`, and reports conflicts via `=== DISCREPANCIES ===`. A
+   contrib-only **submodule scope** ("without submodules" / "only
+   submodules") can skip this wave or run it alone as a completion pass;
+   skipped submodules are recorded in `metadata.json` `submodules_skipped`.
+   *(Sequencing changed 2026-08-17 — full-run A/B validation pending; the
+   grounding mechanism itself is the one validated in runs 7–8.)*
+4. **Synthesis wave** — Explorer C (extension-points + ai-integration, the
+   *synthesis* categories) runs last, reads all earlier files (submodules
+   included) as its verified fact base, reads source only for the guidance
+   layer and facts the base lacks, and reports conflicts via an optional
+   `=== DISCREPANCIES ===` block → orchestrator spawns one follow-up
+   explorer to fix the disputed file.
+5. **Orchestrator** writes `summary.md` + `metadata.json` only.
+6. **Verify** — `scripts/verify.py OUTPUT_DIR --submodules N --module-root
+   MODULE_ROOT`: metadata/file cross-checks both directions, the
+   `submodules_skipped` consistency checks, **plus PSR-4 validation of every
+   `Drupal\<module>\…` FQCN in the docs** (submodule namespaces — documented
+   or skipped — resolve to their own `src/`, found via `<sub>.info.yml`).
    Unresolvable FQCN = PROBLEM = an invented class name.
 
 ## The empirical series
@@ -107,8 +120,10 @@ construction*, not by review.
 - Skills: `ai/skills/discover-drupal-module/` (+ `-core-`) — SKILL.md,
   `scripts/download.py`, `scripts/verify.py` (core keeps copies:
   `download-core-module.sh`, `verify.py`).
-- Agent: `ai/agents/drupal-module-explorer.md` — catalog, sweep, synthesis
-  grounding rules, Output Contract (MANIFEST / KEY-FACTS / DISCREPANCIES).
+- Agents: `ai/agents/drupal-module-explorer.md` — catalog, sweep, synthesis
+  grounding rules, Output Contract (MANIFEST / KEY-FACTS / DISCREPANCIES) —
+  and `ai/agents/drupal-submodule-explorer.md` — the grounded submodule
+  worker (same contract, no KEY-FACTS).
 - Audit skill: `ai/skills/audit-discover-docs/`.
 - Deferred work: `ai/ROADMAP.md`.
 - Output: docs `~/.drupal-context/{modules,core}/…` + `metadata.json`;

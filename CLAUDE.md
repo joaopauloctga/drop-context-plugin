@@ -19,16 +19,16 @@ explains what everything is and how to run it; this file is the rules.
   alongside and runs the script from there — do not fork a core copy.)
 - **Do not break the machine-parseable output contracts.** Orchestrating
   skills parse these mechanically: the `GATE OK` block (download scripts), the
-  `VERIFY OK` / `PROBLEM:` lines (verify.py), and the explorer's
+  `VERIFY OK` / `PROBLEM:` lines (verify.py), and the explorers'
   `=== MANIFEST === / === KEY-FACTS === / === DISCREPANCIES === / === END ===`
-  blocks. Any change to their shape must update every consumer in the same
-  commit.
+  blocks (shared by `drupal-module-explorer` and `drupal-submodule-explorer`).
+  Any change to their shape must update every consumer in the same commit.
 - Skills use the **agentskills.io `SKILL.md` format**; the `name` is
   kebab-case and must equal the directory name. Bundled scripts are
   **stdlib-only** (plain `python3` / bash) — no pip installs, they must run
   anywhere.
 
-## Changing the discover skills or the explorer agent
+## Changing the discover skills or the explorer agents
 
 1. **Read `IMPROVEMENT-HISTORY.md` first.** It records the error taxonomy,
    which mechanism covers each error class, and why the architecture is the
@@ -52,9 +52,15 @@ explains what everything is and how to run it; this file is the rules.
   and agent; audit report files are saved **outside** the docs directory
   (`audit-*.md` inside an output dir would be flagged by verify.py, which
   ignores that prefix only defensively).
-- Confirmed doc errors are fixed by spawning one follow-up
-  `drupal-module-explorer` scoped to the affected category file — the
-  orchestrator (or you) never hand-edits generated docs.
+- Confirmed doc errors are fixed by spawning one follow-up explorer scoped to
+  the affected file — `drupal-module-explorer` for a category file,
+  `drupal-submodule-explorer` for a `submodules/*.md` file — the orchestrator
+  (or you) never hand-edits generated docs. **One sanctioned exception**:
+  `update-module-docs` retags a doc set across a tiny release delta and may
+  apply mechanical, diff-quotable fact substitutions (version string,
+  core-requirement line) directly — gated by its hard preconditions and a
+  mandatory `verify.py` pass; anything narrative stays explorer-only
+  (`upgrade-module-docs` spawns explorers for exactly that reason).
 - When verifying a "does not exist" claim, apply the nonexistence rule:
   whole-module grep for declarations **plus** the inheritance chain (core base
   classes — `drupal-site/web/core` is available in this workspace), and

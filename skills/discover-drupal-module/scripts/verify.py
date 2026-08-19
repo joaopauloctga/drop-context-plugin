@@ -5,7 +5,11 @@
 
 Cross-checks metadata.json against the files on disk in both directions:
 every required doc file present, listed, and non-empty; no unlisted files;
-valid categories; submodule file count matching the GATE's SUBMODULES.
+valid categories; submodule file count matching the expected count (--submodules:
+the GATE's SUBMODULES in a full run, fewer when a submodule scope deferred
+some). A `submodules_skipped` key in metadata.json (written by root-only /
+partial-scope runs) is validated too: each entry needs non-empty `name` and
+`dir` strings, and a submodule may never be both skipped and documented.
 
 With --module-root (the GATE's MODULE_ROOT), additionally validates every
 ``Drupal\\<module>\\...`` class reference found in the generated docs against
@@ -106,7 +110,9 @@ def main() -> int:
         "--submodules",
         type=int,
         default=None,
-        help="Expected submodule file count (the GATE's SUBMODULES value).",
+        help="Expected submodule doc file count on disk after this run (the "
+        "GATE's SUBMODULES in a full run; fewer when a submodule scope "
+        "deferred some to submodules_skipped).",
     )
     ap.add_argument(
         "--module-root",
@@ -138,6 +144,8 @@ def main() -> int:
 
     listed: set[str] = set()
     sub_listed = 0
+    documented_subs: set[str] = set()
+    skipped_names: list[str] = []
     if meta_ok:
         for key in REQUIRED_META_KEYS:
             if key not in meta or meta[key] in ("", None, []):
@@ -146,6 +154,19 @@ def main() -> int:
             problems.append(
                 f"metadata.json 'type' must be 'contrib' or 'core', got: {meta.get('type')!r}"
             )
+        if "project" in meta:
+            project = meta["project"]
+            if not isinstance(project, dict):
+                problems.append("metadata.json 'project' must be an object")
+            else:
+                if not isinstance(project.get("is_covered"), bool):
+                    problems.append("project.is_covered must be a boolean")
+                for key in ("categories", "ecosystem", "maintainers"):
+                    if not isinstance(project.get(key), list):
+                        problems.append(f"project.{key} must be a list")
+                for key in ("maintenance_status", "development_status", "creation_date"):
+                    if not isinstance(project.get(key), (str, type(None))):
+                        problems.append(f"project.{key} must be a string or null")
         entries = meta.get("files")
         if isinstance(entries, list):
             for e in entries:
@@ -174,8 +195,35 @@ def main() -> int:
                         problems.append(
                             f"{f}: missing the 'submodule' key (the submodule's machine name)"
                         )
+                    else:
+                        documented_subs.add(e["submodule"])
                 elif cat not in VALID_CATEGORIES:
                     problems.append(f"{f}: unknown category {cat!r}")
+        if "submodules_skipped" in meta:
+            skipped = meta["submodules_skipped"]
+            if not isinstance(skipped, list) or not skipped:
+                problems.append(
+                    "metadata.json 'submodules_skipped' must be a non-empty list "
+                    "(drop the key when nothing was skipped)"
+                )
+            else:
+                for e in skipped:
+                    if not isinstance(e, dict) or not all(
+                        isinstance(e.get(k), str) and e.get(k) for k in ("name", "dir")
+                    ):
+                        problems.append(
+                            "submodules_skipped entry must be an object with "
+                            f"non-empty 'name' and 'dir' strings: {e!r}"
+                        )
+                        continue
+                    skipped_names.append(e["name"])
+                for n in sorted({n for n in skipped_names if skipped_names.count(n) > 1}):
+                    problems.append(f"submodules_skipped lists {n!r} more than once")
+                for n in sorted(set(skipped_names) & documented_subs):
+                    problems.append(
+                        f"submodule {n!r} is listed both in submodules_skipped and "
+                        "as a documented files[] entry"
+                    )
 
     # audit-*.md files are auditor reports, not part of the generated doc set.
     on_disk = {
@@ -203,6 +251,13 @@ def main() -> int:
         elif size < 120:
             warnings.append(f"suspiciously small ({size} bytes): {f}")
 
+    for n in sorted(set(skipped_names)):
+        if f"submodules/{n}.md" in on_disk:
+            problems.append(
+                f"submodules/{n}.md exists on disk but {n!r} is listed in "
+                "submodules_skipped (stale marker or stray file)"
+            )
+
     sub_on_disk = sum(1 for f in on_disk if f.startswith("submodules/"))
     if args.submodules is not None and sub_on_disk != args.submodules:
         problems.append(
@@ -216,15 +271,16 @@ def main() -> int:
         if not args.module_root.is_dir():
             problems.append(f"--module-root does not exist: {args.module_root}")
         elif meta_ok and isinstance(meta.get("name"), str) and meta["name"]:
-            submodule_names: list[str] = []
+            # Skipped submodules exist in the source too — resolve their
+            # namespaces so root docs referencing them are still validated.
+            sub_ns = set(skipped_names)
             if isinstance(meta.get("files"), list):
-                submodule_names = sorted(
-                    {
-                        e["submodule"]
-                        for e in meta["files"]
-                        if isinstance(e, dict) and e.get("submodule")
-                    }
-                )
+                sub_ns |= {
+                    e["submodule"]
+                    for e in meta["files"]
+                    if isinstance(e, dict) and e.get("submodule")
+                }
+            submodule_names = sorted(sub_ns)
             fqcn_problems, fqcn_checked = check_fqcns(
                 d, args.module_root, meta["name"], submodule_names
             )
@@ -240,6 +296,8 @@ def main() -> int:
 
     print(f"CORE_FILES={len(CORE_FILES)}")
     print(f"SUBMODULE_FILES={sub_on_disk}")
+    if skipped_names:
+        print(f"SUBMODULES_SKIPPED={len(skipped_names)}")
     if fqcn_checked is not None:
         print(f"FQCN_CHECKED={fqcn_checked}")
     print("VERIFY OK")

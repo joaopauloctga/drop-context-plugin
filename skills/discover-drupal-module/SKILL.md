@@ -10,7 +10,11 @@ description: >-
   when asked to "discover",
   "explore", "analyze", or "document" a Drupal module so other agents can
   build on it. Orchestrates parallel drupal-module-explorer subagents that
-  write the category files directly.
+  write the category files directly, then drupal-submodule-explorer subagents
+  that document submodules grounded in those files. Supports an optional
+  submodule scope for huge ecosystems (e.g. eca, commerce): "without
+  submodules" documents the root module only, and a later "only submodules"
+  run — optionally naming a subset — completes the same output directory.
 tools: read, edit/createDirectory, edit/createFile, edit/editFiles, search
 ---
 
@@ -24,9 +28,11 @@ generated docs flow through your context. You download the source, verify the
 paths, spawn the explorers in parallel, then write the two files only you can
 write: `summary.md` and `metadata.json`.
 
-Inputs: a module **machine name** (required, e.g. `webform`) and an optional
-**version** (a release tag like `6.3.2`, or a branch). If the version is
-omitted, the bundled script resolves the **latest stable** tag.
+Inputs: a module **machine name** (required, e.g. `webform`), an optional
+**version** (a release tag like `6.3.2`, or a branch; if omitted, the bundled
+script resolves the **latest stable** tag), and an optional **submodule
+scope** — see "Submodule scope" at the end of step 1. By default the run
+documents the root module **and** all its submodules.
 
 Follow these steps in order.
 
@@ -58,10 +64,17 @@ MODULE=<canonical machine name>
 VERSION=<resolved tag>
 MODULE_ROOT=<absolute path to the dir containing the .info.yml>
 OUTPUT_DIR=<~/.drupal-context/modules/<module>/<version>>
-DATE_EPOCH=<unix epoch seconds — used for metadata.json in step 6>
+DATE_EPOCH=<unix epoch seconds — used for metadata.json in step 7>
+PROJECT_INFO=<absolute path to project-info.json, or none — used in step 7>
 SUBMODULE=<machine name>|<dir relative to MODULE_ROOT>   (one line per submodule)
 SUBMODULES=<count>
 ```
+
+`PROJECT_INFO` points at a JSON file of Drupal.org project metadata (security
+coverage, maintenance/development status, categories, ecosystem, maintainers,
+creation date) the script fetched best-effort from the Drupal.org API + project
+page. `PROJECT_INFO=none` means the fetch failed — the run proceeds normally
+and step 7 simply omits the `project` key.
 
 The source lands in a per-user temp cache
 (`<tempdir>/drupal-context-<user>/modules/<module>/<version>/source/`): it
@@ -82,25 +95,58 @@ module has no submodules: skip the submodules explorer and the `submodules/`
 output entirely, and the rest of this skill runs exactly as it does for a
 single-module project.
 
-## 2. Spawn wave 1 — Explorers A, B (and D) in parallel
+### Submodule scope
+
+The user may scope which part of the module this run documents. Recognize the
+scope from the request in any language (e.g. "without submodules", "sem
+submódulos", "only the submodules"):
+
+- **full** (default — nothing requested): document the root module **and**
+  every submodule, exactly as the steps below describe.
+- **root-only** (asked to skip/exclude submodules): skip the submodule wave
+  (step 4) and write nothing under `submodules/`. Keep the GATE's
+  `SUBMODULE=` lines anyway: step 6 lists those submodules as *detected but
+  not documented* and step 7 records them under `submodules_skipped`, so
+  consumers and a later run can see exactly what is missing. This is the right choice for huge ecosystems (eca, commerce, …)
+  whose submodule set dwarfs the root module.
+- **submodules-only** (asked to document only the submodules, optionally a
+  named subset): a **completion pass** over an existing output directory,
+  typically run in a fresh session after a root-only run. Require that
+  `OUTPUT_DIR/metadata.json` and the ten root category files already exist —
+  if they don't, stop and tell the user to run the root discover first. Skip
+  Explorers A, B, and C entirely: run only the submodule wave (step 4) for
+  the requested submodules (all still-undocumented ones by default), then
+  update `summary.md` and `metadata.json` **in place** (steps 6–7) and
+  re-verify (step 8). The GATE still runs first — it re-resolves
+  `MODULE_ROOT` (cache hit) and the authoritative submodule list.
+
+When the user names specific submodules (in any scope), resolve each name
+against the GATE's `SUBMODULE=` lines by exact machine-name match and report
+any name that doesn't exist instead of guessing; submodules left out of a
+named subset are recorded as skipped, exactly as in root-only.
+
+## 2. Spawn wave 1 — Explorers A and B in parallel
 
 **Only reach this step if the GATE in step 1 printed `GATE OK`.** If you do not
 have a verified `MODULE_ROOT`, go back — do not spawn.
 
-The explorer team runs in **two waves**. Wave 1 covers the factual categories —
-A, B, and D when there are submodules — in parallel. Explorer C (the synthesis
-categories `extension-points` and `ai-integration`) runs in step 4, **after**
-wave 1's files are on disk, and uses them as its verified fact base; that
-ordering is what keeps the synthesis files consistent with the facts they build
-on.
+The explorer team runs in **sequenced waves**. Wave 1 covers the factual root
+categories — Explorers A and B in parallel. When the GATE found submodules
+(and the scope includes them), the **submodule wave** runs next (step 4):
+`drupal-submodule-explorer` batches grounded in wave 1's files. Explorer C
+(the synthesis categories `extension-points` and `ai-integration`) runs last
+(step 5), after every earlier file is on disk, and uses them all as its
+verified fact base. That sequencing is what keeps each later wave consistent
+with the facts the earlier waves already wrote.
 
-Launch **two** `drupal-module-explorer` subagents (**or three — add Explorer D
-when the GATE found submodules**, i.e. `SUBMODULES` > 0) **in a single batch so
-they run concurrently**, each assigned a disjoint set of categories. Give every
-explorer the same `MODULE_ROOT` and `OUTPUT_DIR`, the machine name, and the
-version; assign work as below.
+Launch **two** `drupal-module-explorer` subagents — A and B — **in a single
+batch so they run concurrently**, each assigned a disjoint set of categories.
+Give both the same `MODULE_ROOT` and `OUTPUT_DIR`, the machine name, and the
+version; assign work as below. **In a submodules-only completion pass, skip
+steps 2–3 entirely** (A and B already ran in the root discover) and go
+straight to step 4.
 
-- **Claude Code**: make two (or three) `Task` (Agent) calls with
+- **Claude Code**: make two `Task` (Agent) calls with
   `subagent_type: drupal-module-explorer` in one turn.
 
 Use this prompt template for each wave-1 category explorer (A/B) — **substitute the
@@ -119,36 +165,70 @@ manifest and the END marker."*
 | ------------------- | ----------------------------------------------------- |
 | **A — metadata/UI** | `key-facts`, `configuration`, `permissions`, `routes` |
 | **B — code/API**    | `entities`, `plugins`, `services`, `hooks`, `events`  |
-| **D — submodules**  | `submodules` task (**only if `SUBMODULES` > 0**)      |
 
-(Explorer C is **not** part of this batch — it runs in step 4, after these
-files exist.)
-
-**Explorer D** runs the dedicated `submodules` task: it writes one condensed
-`submodules/<sub_machine>.md` file per submodule. Pass it the full list of
-submodules you recorded in the GATE (each submodule's machine name + its
-directory). Use this prompt template:
-
-> Explore the submodules of the Drupal module whose source is at the path `<MODULE_ROOT>` (parent machine name `<module>`, release `<VERSION>`). Run the **submodules task**: for each submodule below, read that submodule's own subdirectory (plus targeted parent-module lookups for symbols the submodule references but does not define, per your `submodules` catalog entry) and write one condensed file `<OUTPUT_DIR>/submodules/<sub_machine>.md` (per that catalog entry and your Output Contract — each file starts with its H1, no metadata header; write nothing anywhere else). The submodules are: `<sub_machine_1>` at `<dir_1>`, `<sub_machine_2>` at `<dir_2>`, … Then return your final message as the `=== MANIFEST ===` block (one JSON entry per submodule file), ending with `=== END ===`. Nothing else.
+(The submodule wave and Explorer C are **not** part of this batch — they run
+in steps 4 and 5, after these files exist.)
 
 ## 3. Collect the wave-1 manifests
 
 Each explorer's final message is a `=== MANIFEST ===` block holding a JSON
 array — one entry per file it wrote, with `file`, `category`, `title`, and
-`description` keys (submodule entries also carry `submodule`) — and, for
-Explorer A only, a `=== KEY-FACTS ===` block with the inline fact sheet.
-Parse the JSON arrays and keep the key-facts text.
+`description` keys — and, for Explorer A only, a `=== KEY-FACTS ===` block
+with the inline fact sheet. Parse the JSON arrays and keep the key-facts text.
 
 If any explorer returned an `=== ERROR ===` block instead, report it and stop —
 do not fabricate the missing categories. If an explorer's manifest is missing
-some assigned category (or a submodule), spawn **one** follow-up explorer for
-just the missing pieces before giving up.
+some assigned category, spawn **one** follow-up explorer for just the missing
+pieces before giving up.
 
-## 4. Spawn Explorer C — the synthesis wave
+## 4. Spawn the submodule wave — `drupal-submodule-explorer` batches
 
-Only after every wave-1 manifest is collected and its files are on disk, launch
-**one** more `drupal-module-explorer` for the synthesis categories. Use this
-prompt template — substitute the real values as before:
+Run this step only when the GATE found submodules (`SUBMODULES` > 0) **and**
+the scope includes them (full or submodules-only). Otherwise skip to step 5.
+
+This wave runs **after** wave 1's files are on disk because the
+`drupal-submodule-explorer` agent is **grounded by design**: it reads the root
+module's category files in `OUTPUT_DIR` as its verified fact base for
+parent-module symbols, touches parent source only for what they don't cover,
+and refuses to run without that fact base. (In a submodules-only completion
+pass the fact base is the earlier root run's files, which step 1 already
+required.)
+
+**Batch large sets.** One explorer cannot absorb a huge submodule set in a
+single context: split the in-scope submodules into batches of at most **8**
+and launch one `drupal-submodule-explorer` subagent per batch (D1, D2, …),
+**all in a single parallel batch**. The output files are disjoint
+(`submodules/<sub_machine>.md`), so batches never conflict.
+
+- **Claude Code**: one `Task` (Agent) call per batch with
+  `subagent_type: drupal-submodule-explorer`, all in one turn.
+
+Prompt template per batch — substitute the real values as before:
+
+> Document the submodules of the Drupal module whose source is at the path `<MODULE_ROOT>` (parent machine name `<module>`, release `<VERSION>`). The parent's category docs are in `<OUTPUT_DIR>` — treat them as your verified fact base, per your grounding rules. For each submodule below, read that submodule's own subdirectory and write one condensed file `<OUTPUT_DIR>/submodules/<sub_machine>.md`, per your Output Contract — each file starts with its H1, no metadata header; write nothing anywhere else and never modify the module source. The submodules are: `<sub_machine_1>` at `<dir_1>`, `<sub_machine_2>` at `<dir_2>`, … Then return your final message as the `=== MANIFEST ===` block (one JSON entry per submodule file), plus a `=== DISCREPANCIES ===` block only if you verified that a fact in a root category doc contradicts the source, ending with `=== END ===`. Nothing else.
+
+Collect each batch's manifest exactly like step 3 (submodule entries also
+carry the `submodule` key). If a batch returned `=== ERROR ===`, report it and
+stop; if a manifest is missing an assigned submodule, spawn **one** follow-up
+batch for just the missing ones.
+
+**If any batch returned a non-empty `=== DISCREPANCIES ===` block**, each
+entry is a fact the explorer verified against the source and found wrong in a
+root category file. Spawn **one** follow-up `drupal-module-explorer` assigned
+to the affected category file(s), passing the disputed point(s) verbatim, to
+re-check the source and rewrite the file(s) if confirmed — and resolve this
+**before step 5**, so Explorer C grounds itself in corrected files. Never
+resolve a dispute by editing a file yourself, and never ignore one silently.
+
+## 5. Spawn Explorer C — the synthesis wave
+
+**Skip this step entirely in a submodules-only completion pass** — the
+synthesis files already exist from the root run; go to step 6.
+
+Only after every earlier wave's manifests are collected and files are on disk
+(wave 1 and, when it ran, the submodule wave), launch **one** more
+`drupal-module-explorer` for the synthesis categories. Use this prompt
+template — substitute the real values as before:
 
 > Explore the Drupal module whose source is at the path `<MODULE_ROOT>` (machine name `<module>`, release `<VERSION>`). Cover **only** these categories: **extension-points, ai-integration**. These are synthesis categories — follow your "Synthesis categories (fact grounding)" rules: first read the category files already present in the output directory `<OUTPUT_DIR>` and treat them as your verified fact base; read the module source for the guidance layer and for anything they do not cover. Write one Markdown file per assigned category directly into `<OUTPUT_DIR>`, per your Output Contract — each file starts with its `# …` H1, no metadata header; write nothing anywhere else and never modify the module source. Then return your final message as the `=== MANIFEST ===` block (one JSON entry per file you wrote), plus a `=== DISCREPANCIES ===` block only if you verified that a fact in an existing category file contradicts the source, ending with `=== END ===`. Nothing else.
 
@@ -162,7 +242,7 @@ file(s) if the dispute is confirmed. Never resolve a dispute by editing a
 category file yourself, and never ignore one silently — if it cannot be
 resolved, call it out in your final report.
 
-## 5. Build `summary.md` yourself
+## 6. Build `summary.md` yourself
 
 Explorers do not produce `summary.md`. Build it from Explorer A's key-facts and
 include an index linking every file, then write it to `OUTPUT_DIR/summary.md`.
@@ -197,7 +277,7 @@ It starts directly with its H1 — no metadata header:
 - [AI Integration Notes](ai-integration.md)
 ```
 
-**Add a `## Submodules` section only when Explorer D ran (`SUBMODULES` > 0).**
+**Add a `## Submodules` section only when the submodule wave ran.**
 It indexes the per-submodule files and, for each, gives a one-line description
 of what the submodule adds to the parent — derive that line from the manifest
 `description` (do not invent capabilities). Group related submodules under
@@ -214,7 +294,28 @@ config the submodule adds on top of the core module.
 - …
 ```
 
-## 6. Write `metadata.json`
+**Root-only scope (or a partial submodule subset)**: add instead (or in
+addition) a section listing what was deliberately left out. Names and
+directories come **verbatim from the GATE's `SUBMODULE=` lines** — never
+invent a description for a submodule that was not documented:
+
+```markdown
+## Submodules detected but not documented in this run
+
+This run documented the root module only. Re-run the discover skill with
+"only submodules" to complete them.
+
+- `{sub_machine}` (at `{dir}/`)
+- …
+```
+
+**Submodules-only pass**: update the existing `summary.md` in place — add the
+newly documented submodules to the `## Submodules` section (create it if
+absent) from the manifest descriptions, remove those entries from the "not
+documented" section, and delete that section once it is empty. Leave the rest
+of the file untouched.
+
+## 7. Write `metadata.json`
 
 All per-file metadata lives in a single `OUTPUT_DIR/metadata.json` — the doc
 files themselves carry none. Assemble it from the gate values and the
@@ -228,6 +329,7 @@ never invent or rewrite them:
   "type": "contrib",
   "version": "{VERSION}",
   "date": {DATE_EPOCH},
+  "project": { "…the parsed contents of the PROJECT_INFO file, embedded verbatim…" },
   "files": [
     {
       "file": "summary.md",
@@ -243,21 +345,55 @@ never invent or rewrite them:
 
 `files` must list **exactly** `summary.md` plus every file the explorers
 reported (all 10 category files, and one `submodules/<sub_machine>.md` per
-submodule when there are submodules). `date` is the `DATE_EPOCH` from the gate
+**documented** submodule). `date` is the `DATE_EPOCH` from the gate
 (Unix epoch seconds).
 
-## 7. Verify and report
+`project` is the parsed JSON object read from the gate's `PROJECT_INFO` file,
+embedded **verbatim** — never retype, trim, or reorder its values (it carries
+the Drupal.org facts the site importer maps onto `module_details`: coverage,
+statuses, categories, ecosystem, maintainers, creation date). When
+`PROJECT_INFO=none`, omit the `project` key entirely.
+
+**Root-only scope (or a partial subset)**: `files` simply carries no entry
+for an undocumented submodule. Record the skipped ones instead in a top-level
+`submodules_skipped` key — one object per skipped submodule, `name` and `dir`
+copied verbatim from the GATE's `SUBMODULE=<name>|<dir>` lines; omit the key
+entirely when nothing was skipped:
+
+```json
+"submodules_skipped": [
+  {"name": "eca_base", "dir": "modules/eca_base"}
+]
+```
+
+Consumers ignore the extra key; the verifier cross-checks it (a submodule may
+never be both skipped and documented).
+
+**Submodules-only pass**: update the existing `metadata.json` in place —
+leave every existing top-level value (including `date`) untouched, append the
+new submodule `files` entries with `category`/`title`/`description` copied
+verbatim from the manifests, remove each newly documented submodule from
+`submodules_skipped`, and drop that key entirely once its list is empty.
+
+## 8. Verify and report
 
 Run the bundled verifier — it cross-checks `metadata.json` against the disk
 in both directions (all 11 doc files present, listed, and non-empty; no
-unlisted files; valid categories; submodule count matching the GATE), and —
+unlisted files; valid categories; submodule count matching this run's scope), and —
 via `--module-root` — validates every `Drupal\<module>\…` class reference in
 the docs against the source by PSR-4, so an invented class name fails the
 verify:
 
 ```bash
-python3 "$SKILL_DIR/scripts/verify.py" "$OUTPUT_DIR" --submodules <SUBMODULES> --module-root "$MODULE_ROOT"
+python3 "$SKILL_DIR/scripts/verify.py" "$OUTPUT_DIR" --submodules <N> --module-root "$MODULE_ROOT"
 ```
+
+`--submodules <N>` is the number of submodule doc files that must exist on
+disk **after this run**: the GATE's `SUBMODULES` in a full run; `0` in a
+root-only run; previously documented + newly documented in a submodules-only
+pass. The verifier also cross-checks `submodules_skipped` (shape, and no
+overlap with documented submodules) and resolves class references in skipped
+submodules' namespaces against the source.
 
 - **`VERIFY OK`** → done.
 - **`VERIFY FAILED`** → fix what the `PROBLEM:` lines say: if a file an

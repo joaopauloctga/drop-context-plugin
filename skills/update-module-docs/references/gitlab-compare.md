@@ -1,5 +1,13 @@
 # GitLab compare (Drupal.org GitLab)
 
+Role in these skills: **enrichment and fallback**. The primary delta mechanism
+is the local diff of the two downloaded tags — use this API to resolve
+`previous_tag`, to enrich the release-notes summary with merged-MR titles and
+issue links, and as the delta source only when the download fails. An API file
+list (possibly paginated/truncated) is **not** a complete diff: a docs-impact
+verdict built only from it can be at best `unknown`, never `none` — and
+`update-module-docs`' gates require the complete local diff outright.
+
 Public API base: `https://git.drupalcode.org/api/v4`
 
 Project path for contrib modules is usually `project/{machine_name}`  
