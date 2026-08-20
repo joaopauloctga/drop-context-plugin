@@ -70,6 +70,7 @@ construction*, not by review.
 | Procedural API invisible | ~20 workflow helpers | `services.md` 3-section contract (container / public PHP API / procedural) |
 | Submodule hedging | "presumably surfaces a message" | targeted parent-module symbol lookups |
 | Coverage misses | migrations/state (missed twice), field_type_categories, README | inspect-list additions **with an owning category** |
+| **Wave-1 cross-explorer identifier drift** — a non-synthesis file restates an identifier that a *sibling* wave-1 explorer's category actually owns, without grepping it itself | core `media` 11.4.5 audit (2026-08-19): `configuration.md` (Explorer A) named the thumbnail-download queue `media_thumbnail_downloader` — plausible from the worker class name `ThumbnailDownloader`, but the real plugin id (owned by Explorer B's `plugins.md`/`entities.md`, both correct) is `media_entity_thumbnail` | **not yet covered** — verify.py's FQCN check only resolves classes, not queue/plugin/service *id strings*; see ROADMAP candidate below |
 
 ## Hard-won methodology lessons
 
@@ -102,6 +103,25 @@ construction*, not by review.
   (more overlapping writers of the same facts). Rejected in favor of
   sequencing. Splitting B purely for *context size* on huge modules remains a
   separate, valid idea (ROADMAP).
+- **Wave-1 is near-flawless, not flawless** — the first counter-example to
+  "every error in the series lived in synthesis C" surfaced in a 2026-08-19
+  audit of core `media` 11.4.5 (outside the tracked 2026-08-13 series, done
+  with the `audit-discover-docs` skill): `configuration.md`, a wave-1 file,
+  misnamed the thumbnail queue as `media_thumbnail_downloader` — a plausible
+  guess from the worker class's short name (`ThumbnailDownloader`) rather
+  than a grep of the plugin's actual `id:` attribute — while `entities.md`
+  and `plugins.md`, written by the *other* wave-1 explorer in the same run,
+  both had it right (`media_entity_thumbnail`). Same underlying risk as the
+  "splitting multiplies contradiction risk" lesson above, just observed
+  intra-wave-1 instead of wave-1-vs-synthesis: two parallel explorers can
+  each state a fact belonging to the other's category from memory instead of
+  the source. `verify.py`'s FQCN check doesn't catch this class — it only
+  resolves `Drupal\<module>\…` class references, not string ids (queue/
+  plugin/service ids). A same-run audit also caught a synthesis-file
+  overstatement in `ai-integration.md` (claimed the `oembed` source plugin
+  catches both `ResourceException` and `ProviderException`; source shows it
+  only catches the former) — ordinary synthesis mis-citation, consistent
+  with the existing pattern.
 
 ## A/B protocol for evaluating the next change
 

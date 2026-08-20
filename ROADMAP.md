@@ -158,6 +158,38 @@ exact (whitespace-normalized) match somewhere in the module source — worth
 prototyping before adding prose rules, per the "deterministic beats
 instructed" lesson.
 
+### Document annotation properties by their *effective definition key*
+
+*Found 2026-08-19, auditing the metatag 2.2.0 run — the run's only substantive
+error.* `plugins.md` and `extension-points.md` both list `absoluteUrl` among
+the `MetatagTag` annotation properties a plugin author sets. The annotation
+*class* does declare `protected $absoluteUrl`, but the definition key the base
+class actually reads is snake_case — `MetaNameBase::__construct()` does
+`!empty($plugin_definition['absolute_url'])` — and all ~10 shipped plugins
+write `absolute_url = TRUE`. A consumer following the docs would write
+`absoluteUrl = TRUE` and get a silently dead flag. The docs even documented
+the analogous quirk for `trimmable` (read from the definition though absent
+from the annotation class) but missed this sharper camelCase-vs-snake_case
+trap. Proposed explorer rule (owning category: `plugins.md`): when documenting
+an annotation/attribute property list, cross-check each property name against
+(a) the keys the plugin base class reads from `$plugin_definition` and (b) the
+keys shipped concrete plugins actually write; where they diverge from the
+declared property name, document the key that *works* and flag the mismatch.
+
+### Universal claims over enumerable YAML must be derived by enumeration
+
+*Found 2026-08-19, same audit.* `routes.md` opens with "Every route … is
+marked `_admin_route: TRUE`" — true for 6 of 7 routes; `metatag.reports_plugins`
+has no `options:` block (low impact, since core's `AdminRouteSubscriber` flags
+`/admin/*` paths anyway, but the statement about the YAML is false). Same
+error family as unverified counts: a universal quantifier ("every", "all",
+"none") over an enumerable surface (routing/permissions/services YML entries)
+written from a skim rather than an enumeration. Proposed explorer rule:
+before writing a universal claim over a YAML file's entries, enumerate the
+entries and check each one; qualify ("all but X") when any entry differs.
+Possibly mechanizable in verify.py for the specific `_admin_route`/
+`_permission` shape, but the general rule is prose.
+
 ### Port the submodule scope to `discover-drupal-core-module`
 
 *Found 2026-08-17, adding the submodule scope to `discover-drupal-module` for
@@ -180,6 +212,145 @@ verified files). Optional follow-up: offer a C re-run after a completion pass
 so the synthesis files can cite submodule capabilities — worth it mainly for
 ecosystems where the submodules ARE the extension surface (eca). Needs the
 discrepancy protocol unchanged.
+
+### Deprecation sweep as an explorer completeness rule
+
+*Found 2026-08-19, auditing the `block` core 11.4.5 doc set.*
+
+The largest defect in an otherwise clean audit was a **gap**, not an error: 5
+of the module's 14 `@deprecated` markers appeared in no doc file, and all five
+were the freshest ones (deprecated in 11.4.0, the very line being documented) —
+`BlockRepositoryInterface::REGIONS_VISIBLE`/`::REGIONS_ALL`,
+`BlockListBuilder::systemRegionList()`, `BlockDeleteForm::systemRegionList()`,
+`BlockController::getVisibleRegionNames()`. Worse, `ai-integration.md` shipped a
+"Deprecations — do not build new integrations on these" section presenting
+itself as the consolidated list while omitting all five, and the two missing
+interface constants sit on `BlockRepositoryInterface` — the exact interface
+both synthesis files recommend injecting.
+
+This is mechanically detectable, unlike most doc defects: `grep -rn "@deprecated"
+src {module}.module {module}.install` yields a closed set, and every hit should
+appear in some doc file. Options: (a) an explorer completeness rule in the same
+family as the existing class sweep — enumerate the deprecations, confirm each is
+covered; (b) a `verify.py` check (needs `--module-root`, which it already takes)
+that fails when a `@deprecated` symbol name is absent from every doc file. (b) is
+cheaper and cannot be forgotten, but risks false positives on deprecations that
+genuinely do not belong in any category (a deprecated protected helper on a form).
+Leaning (a) + a `PROBLEM:` line from (b) as a backstop.
+
+Addendum, found the same day while running the fix cycle for this audit: a
+deprecation note must not assert the **status of a symbol declared outside
+`MODULE_ROOT`**. Both `BlockListBuilder::systemRegionList()` and
+`BlockDeleteForm::systemRegionList()` carry the one-line docblock "Wraps
+system_region_list()." — and two independently-spawned scoped explorers each
+turned that into "a wrapper around the *removed* `system_region_list()`". It is
+not removed: core still declares it (`core/modules/system/system.module:331`)
+and only deprecates it, with a **13.0.0** removal target versus the block
+methods' **12.0.0**. The source the explorer can see says nothing about the
+wrapped function's lifecycle, so the claim was inferred from the word "wraps".
+Same root cause as the inheritance-chain item below — a symbol outside the
+module subtree — and the same cheap remedy: state the status only of symbols
+whose declaration you read, and otherwise name the symbol without characterizing
+it. That two separate agents produced the identical false inference from the
+identical docblock suggests this is a systematic prompt-level gap, not bad luck.
+
+### Claims about language/runtime semantics need execution, not reasoning
+
+*Found 2026-08-19, running the fix cycle for the block 11.4.5 audit.* Distinct
+from every other item here: those are about facts the module source states, this
+is about a fact **PHP** decides. `BlockRepositoryInterface::getUniqueMachineName()`
+declares `$theme` required (src/BlockRepositoryInterface.php:54) while
+`BlockRepository` implements it as `?string $theme = NULL` (src/BlockRepository.php:89).
+The orchestrator's own brief characterized a one-argument call as "a fatal against
+the interface contract", two explorers faithfully wrote it down, and one sharpened
+it to "a fatal `ArgumentCountError` when the variable is typed as the interface".
+All wrong: PHP dispatches on the runtime object, so the call returns normally —
+confirmed by executing a five-line reproduction (interface with two required
+params, lenient implementation, one-arg call through an interface-typed variable →
+no error; same call against a strict implementation → `ArgumentCountError`). The
+real risk is a decorator that honors the interface signature, which this doc set
+elsewhere recommends writing.
+
+The lesson is not "explorers hallucinate" — they propagated the orchestrator's
+framing, correctly per the fact-grounding rules. It is that a claim of the form
+"this code will fail with X" is not verifiable by reading the module, and reading
+harder does not help. Cheap remedy, since `php -r` is available in this
+environment: when a doc asserts a runtime outcome the source does not literally
+state, reproduce it in a few lines and quote what actually happened. Worth a line
+in the behavioral rules alongside "never fabricate" — *never assert a runtime
+behavior you have not either read verbatim in the source or executed.*
+
+### `help_topics/` has no owning category
+
+*Found 2026-08-19, same audit (block 11.4.5).* The `block` module ships
+`help_topics/block.{overview,place,configure}.html.twig` and no doc file
+mentions them — correctly, because no entry in the explorer's category catalog
+claims them: `routes` is "key routes … plus menu/task/action/contextual links",
+and `hook_help()` (a different mechanism) lands in `hooks`. Help Topics are
+end-user documentation rather than API surface, so the honest options are to
+assign them to `routes` (as admin-UI surface) with one line each, or to state in
+the catalog that they are deliberately out of scope so the omission stops
+reading as an oversight in future audits. Low impact either way; the point is to
+decide once rather than rediscover it per audit.
+
+### Extend the universal-claims rule beyond YAML, to PHP and render arrays
+
+*Found 2026-08-19, auditing the `block` core 11.4.5 doc set.* The
+"Universal claims over enumerable YAML" rule above (found the same day on
+metatag) turns out to be the general failure mode, not a YAML one. Three of
+this audit's ten errors were the same shape over **non-YAML** surfaces: "the
+migrate source/process/destination plugins are **all** individually deprecated"
+(the three *source* plugins carry no deprecation at all — this one condemned
+exactly the plugins a reader would legitimately extend), "**Every** route the
+Block module defines requires `administer blocks`" (3 of 10 use
+`_entity_access` — the YAML case, already covered), and "`$build` contains
+**only** `#cache`" (it also carries `#weight`, and sometimes
+`#placeholder_strategy_denylist`). Proposal: restate that rule with the
+enumerable surface left open — YAML entries, `src/**` class files, the keys of
+a render array literal — so the trigger is the quantifier (*all / every / only
+/ none / no other*), not the file format it ranges over. The remedy is
+unchanged: enumerate, or weaken the sentence to the subset actually checked.
+
+### "Cite means entail": a `see X.md` reference must be entailed by X.md
+
+*Found 2026-08-19, same audit (block 11.4.5).*
+
+All three cross-file divergences had the synthesis file on the wrong side while
+the wave-1 file it cited was correct — including the worst error in the set,
+which literally reads "…with no replacement (see `plugins.md`)" while
+`plugins.md` documents the deprecations correctly and narrowly. The two-wave
+grounding rule (2026-08-13) says *facts they cover, you copy* and it demonstrably
+works; what is missing is a check on the citation itself. Proposal: make the
+inverse explicit in the synthesis-category rules — if you write `see X.md`, the
+claim in that sentence must be restated from X.md, and a claim you derived
+yourself must not carry a fact-base citation. Possibly checkable later: a
+sentence containing `see X.md` whose key symbols do not appear in `X.md`.
+
+### Read the asset files a library points at before describing it
+
+*Found 2026-08-19, same audit (block 11.4.5).*
+
+`extension-points.md` attributed the block admin drag-and-drop behavior to
+`block/drupal.block.admin` because that library declares a `core/drupal.tabledrag`
+dependency — but `Drupal.behaviors.blockDrag` is defined in `js/block.js`, i.e.
+the *other* library (`block/drupal.block`). Attaching the documented library alone
+yields a table that does not drag. The explorer's file checklist already includes
+`js/**` for `Drupal.behaviors`; the missing step is binding those behaviors back to
+the library that ships them. Proposal: when a doc describes what a library *does*,
+that description must come from the files listed under its `js:`/`css:` keys in
+`{module}.libraries.yml`, never from its `dependencies:` list.
+
+### Self-consistency check: a stated count vs the table beneath it
+
+*Found 2026-08-19, same audit (block 11.4.5).*
+
+`hooks.md` wrote "8 `#[Hook]`-attributed methods" directly above a table listing
+**9** of them, then "in total … 9 across the two classes" where the actual total
+is 10. The failure is not knowledge, it is that nothing recounts the table after
+it is written. This is the cheapest possible `verify.py` check — an integer
+adjacent to a phrase like "`#[Hook]`" or "methods" in the same paragraph as a
+table, compared to that table's row count — and it needs no module source at all,
+so it also works on the doc set alone. Small scope, near-zero false-positive risk.
 
 ## Migrate pipeline
 
