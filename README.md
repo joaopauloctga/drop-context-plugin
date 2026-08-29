@@ -10,12 +10,14 @@ the workspace (`.claude/`, `.agents/`) only symlinks back here.
 | --- | --- |
 | `skills/discover-drupal-module/` | Discover a **contrib** module → category docs + `metadata.json`. Bundles its own downloader (`scripts/download.py`) and verifier (`scripts/verify.py`). |
 | `skills/discover-drupal-core-module/` | Same for **core** modules (sparse-downloads only the module subtree). Keeps its own copies of the scripts. |
+| `skills/discover-drupal-core-library/` | Document a framework library below `core/lib/Drupal` → stable summary/architecture/API/usage docs, optional source-driven topics, and search-oriented `metadata.json`. Uses direct exploration for small libraries and survey/research/synthesis waves for large ones. |
 | `skills/generate-module-skill/` / `generate-core-module-skill/` | Turn discovered docs into an installable `dc-<module-name>` agent skill. Bundles its own verifier (`scripts/verify.py`) that checks the generated skill's structure and grounds every identifier in it against the discover docs; the core variant reuses the contrib copy. |
 | `skills/update-module-docs/` | Version-bump maintenance for a documented module (small delta: retag in place + release.json). Hosts the shared release-maintenance references (`docs-impact.md`, `output-contract.md`, …). |
 | `skills/upgrade-module-docs/` | Version-bump maintenance for real but contained deltas (new doc set alongside + release.json; explorer-regenerated categories). |
 | `skills/boost-*/` | Legacy generated skills (the pipeline's *product*, not tools — being replaced by `dc-*` naming). |
 | `agents/drupal-module-explorer.md` | The category worker agent the discover skills orchestrate. Exploration methodology, category contracts, and the shared output contract live here. |
 | `agents/drupal-submodule-explorer.md` | The submodule worker agent — documents submodules in condensed `submodules/*.md` files, **grounded in the already-written category docs** for parent symbols. Runs after wave 1, in batches of ≤8 submodules. |
+| `agents/drupal-core-library-explorer.md` | Multi-mode worker for core libraries: surveys source topology, writes per-workstream evidence notes, and synthesizes the stable library documentation without imposing module categories. |
 | `skills/audit-discover-docs/` | Deep, read-only quality audit of generated discover docs — verifies claims against the module source and delivers a `path:line`-evidenced report. |
 | `skills/migrate-discover-docs/` | Migrate legacy `storage/…/discover` docs (old 6-line-header format) into the current format under `~/.drupal-context/`, then audit-and-fix the content against the module source. Bundles the mechanical converter (`scripts/migrate.py`). |
 | `ROADMAP.md` | Deferred improvement ideas, with date + context. |
@@ -31,6 +33,7 @@ runner that loads `SKILL.md` files):
 /discover-drupal-module eca without submodules         # root-only scope: huge ecosystems, submodules deferred
 /discover-drupal-module eca only submodules            # completion pass over an existing root-only run (fresh context)
 /discover-drupal-core-module <machine_name> [<core_version>]
+/discover-drupal-core-library Core/Ajax [<project-or-drupal-root>]
 /generate-module-skill <machine_name> [<version>]      # run after discover
 /audit-discover-docs <machine_name> [<version>]        # deep QA of a discover run (read-only)
 /migrate-discover-docs <machine_name> [<version>]      # legacy storage/…/discover docs → current format + audit-fix
@@ -60,6 +63,15 @@ What a discover run does, in order:
 Output lands in `~/.drupal-context/modules/<module>/<version>/` (contrib) or
 `~/.drupal-context/core/<version>/<module>/` (core). Source cache lives in
 `${TMPDIR}/drupal-context-<user>/…` and is disposable.
+
+Core-library discovery is a separate source-local flow. It reads an installed
+Drupal checkout at `core/lib/Drupal`, resolves the version from
+`Drupal::VERSION`, and writes to
+`~/.drupal-context/core-libraries/<version>/<Core-or-Component>/<library>/`.
+The four stable files are `summary.md`, `architecture.md`, `api.md`, and
+`usage.md`; large libraries may add independently retrievable `topics/*.md`
+entries. `metadata.json` records a source digest and assigns every target PHP
+file to exactly one documentation entry for mechanical coverage verification.
 
 **Model/effort tip**: Sonnet at high effort is the validated operating point
 for discover runs; reserve Opus or max effort for exceptionally API-dense
@@ -122,9 +134,18 @@ Three layers, cheapest first:
    ```
 
    It cross-checks `metadata.json` against the files on disk in both
-   directions **and validates every `Drupal\<module>\…` class reference in the
-   docs against the source via PSR-4** — an invented class name fails the
-   verify. `VERIFY OK` + `FQCN_CHECKED=n` is the pass signal.
+   directions, runs doc-only consistency checks (a stated count vs the
+   enumeration it introduces; two files citing the same code with different
+   line ranges), and grounds the docs in the source: every
+   `Drupal\<module>\…` class reference resolves via PSR-4, every backticked
+   module-prefixed id occurs in the source, a code span quoted next to a
+   `path:line` citation is literally in those lines, a `Class::method()` +
+   `path:line` pair really lands inside that method, every `Plugin ID` in a
+   table is declared by a non-abstract class, and every `@deprecated` public
+   symbol is documented; libraries and plugin ids nobody names are warned
+   about. `VERIFY OK` plus the `*_CHECKED=n` counters is the pass signal. The
+   discover skills also run it in `--partial` mode as a **wave-1 gate**,
+   before the submodule and synthesis waves ground themselves in those files.
 
 2. **Quick manual smoke checks** — `services.md` must have its three sections
    (Container Services / Public PHP API / Procedural API); `events.md` must

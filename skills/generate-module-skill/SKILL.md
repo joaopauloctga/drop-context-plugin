@@ -168,7 +168,8 @@ the loading agent's attention.
 | `references/configure.md`   | `configuration.md` + `permissions.md` + `routes.md`  | Module exposes config objects, admin UI, or permissions worth knowing.         |
 | `references/extend.md`      | `extension-points.md` + `hooks.md` + `services.md`   | Module exposes alter hooks, service decoration points, or plugin types.        |
 | `references/theme.md`       | `extension-points.md` (theme/template content)       | Module defines theme hooks, template suggestions, or preprocess layers.        |
-| `references/fields.md`      | `entities.md` + `extension-points.md`                | Module adds fields, pseudo-fields, or alters Field UI on an entity type.       |
+| `references/entity.md`      | `entities.md`                                        | Module defines its **own** content or config entity types: base-field names, entity keys, getter/setter names, bundle/config-entity properties, custom storage/handler APIs. |
+| `references/fields.md`      | `entities.md` + `extension-points.md`                | Module adds fields, pseudo-fields, or Field UI alterations to **other** entity types (not its own — those go in `entity.md`). |
 | `references/events.md`      | `events.md`                                          | Module dispatches custom events or subscribes to events worth overriding.      |
 | `references/plugins.md`     | `plugins.md`                                         | Module defines a plugin type or ships notable plugin implementations.          |
 | `references/services.md`    | `services.md` + `extension-points.md`                | Module ships injectable services with a public interface.                      |
@@ -352,6 +353,41 @@ Two rules that make step 8's grounding check work for you:
   generated skill must keep that qualifier next to the fact (or drop the
   fact entirely). Never promote a hedged fact into working guidance: the
   discover pipeline hedged it because the source did not support more.
+- **Never invent the body of a file the docs only describe.** A Twig
+  template, a JS behavior, a config fixture: if the discover docs list its
+  variables or keys but do not quote its content, do not write a
+  "minimal" version of it — the parts the docs did not mention (a wrapper
+  element a JS selector targets, a library attach, a fallback branch) are
+  exactly what a from-scratch rewrite drops. Instead tell the agent to
+  copy the module's own file (name its path, e.g. `templates/flag.html.twig`)
+  into the theme/module and edit from there, and list what the docs say it
+  must keep.
+- **The consumer has only this skill — never point it at the discover
+  docs.** The agent that loads `dc-*` cannot open `~/.drupal-context/`; a
+  sentence like "see the discover docs' Entities category for those" or
+  "full catalog in `hooks.md`" is a dead end. Either restate the needed
+  fact in the reference (that is what `references/entity.md` and friends
+  are for) or omit it. When a hedge is needed, phrase it without the
+  pipeline ("the module's own schema does not enumerate these keys"), not
+  "the discover docs do not say".
+- **YAML/config examples are documents, not prose.** A concrete example
+  must parse (one key per mapping — a duplicated `events:` or `actions:`
+  is rejected on import), follow the entity's documented shape, and take
+  **every** key and value from the discover docs: the schema mapping, an
+  exported fixture, or a documented enum value. Never guess a value's type
+  (`severity: "info"` for an integer field), invent an enum member
+  (`mode: set` when the documented values are `set:clear` / `set:force_clear`
+  …), or choose a format the docs never state. If the docs do not enumerate
+  a plugin's configuration keys, say so in one line next to the example
+  ("configuration keys not enumerated in the docs") instead of filling
+  them in.
+- **No batch-relative sentences in `references/submodules*.md`.** The
+  generator reads submodules in groups; "the only one of these four
+  submodules with an extra dependency" or "all three submodules in this
+  group compute access directly" are true of the batch, not the module, and
+  the consumer has no batch to relate them to. State each submodule's facts
+  on their own; never generalise one submodule's default across its
+  siblings unless every sibling's doc says the same.
 
 ## 8. Verify — run the bundled checker
 
@@ -375,7 +411,16 @@ caps, and leftover `{placeholder}` tokens — and **grounding**: every
 `Drupal\{module}\…` FQCN and every module-named `hook_*` you wrote must
 appear verbatim in the discover docs; module-prefixed dotted identifiers
 (service IDs, route names, config keys) missing from the docs come back as
-warnings.
+warnings. It also enforces the **consumer contract** and the **example
+rules** from step 7: a sentence that points the reader at the discover docs
+("see the discover docs' Entities category", a bare `hooks.md` with no such
+sibling reference) is a PROBLEM, any other mention of the discover docs a
+WARNING; every ```yaml fence is parsed — a duplicate key in one mapping is
+a PROBLEM, a line the subset reader cannot parse a WARNING, and an
+identifier-like value (`bef_links`, `set:clear`) that occurs nowhere in the
+discover docs a WARNING (an invented enum value or guessed id, unless it is
+your own example's `id`/`label`/field name — those are skipped);
+batch-relative phrases in `references/submodules*.md` are WARNINGs.
 
 - **`VERIFY OK`** → continue to step 9.
 - **`PROBLEM:` lines** → each one is a defect in what you wrote; fix it in

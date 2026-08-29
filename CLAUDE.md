@@ -17,6 +17,8 @@ explains what everything is and how to run it; this file is the rules.
   `skills/generate-module-skill/scripts/verify.py`, is deliberately
   single-copy: `generate-core-module-skill` requires the contrib skill
   alongside and runs the script from there — do not fork a core copy.)
+  The core-library verifier, `skills/discover-drupal-core-library/scripts/verify.py`,
+  is a third, independent script (different output contract), not a copy.
 - **Do not break the machine-parseable output contracts.** Orchestrating
   skills parse these mechanically: the `GATE OK` block (download scripts), the
   `VERIFY OK` / `PROBLEM:` lines (verify.py), and the explorers'

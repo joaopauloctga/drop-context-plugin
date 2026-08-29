@@ -147,6 +147,26 @@ do not fabricate the missing categories. If an explorer's manifest is missing
 some assigned category, spawn **one** follow-up explorer for just the missing
 pieces before giving up.
 
+### Wave-1 gate — verify these files before anything is grounded in them
+
+The submodule wave and Explorer C copy facts from wave 1's files, so a wrong
+fact here propagates into every later file by construction. Verify wave 1
+**now**, in partial mode (it checks whatever exists and skips the
+completeness checks — `summary.md`, the synthesis files and `metadata.json`
+do not exist yet):
+
+```bash
+python3 "$SKILL_DIR/verify.py" "$OUTPUT_DIR" --partial --module <module> --module-root "$MODULE_ROOT"
+```
+
+Judge the output exactly as in step 8. Every `PROBLEM:` line names the file
+and the defect (a miscount, an invented class or plugin id, a `path:line`
+that sits in the wrong function, a synthesized code quotation): spawn **one**
+follow-up `drupal-module-explorer` scoped to that category file, quoting the
+verifier line verbatim, then re-run the gate. Do not start step 4 with a
+`PROBLEM:` standing. `WARNING:` lines are judged per step 8 — fix the ones
+that look invented, carry the rest into the final report.
+
 ## 4. Spawn the submodule wave — `drupal-submodule-explorer` batches
 
 Run this step only when the GATE found submodules (`SUBMODULES` > 0);
@@ -283,23 +303,54 @@ submodule when there are submodules). `date` is the `DATE_EPOCH` from the gate
 Run the bundled verifier (it sits next to this SKILL.md) — it cross-checks
 `metadata.json` against the disk in both directions (all 11 doc files
 present, listed, and non-empty; no unlisted files; valid categories;
-submodule count matching the GATE), and — via `--module-root` — validates
-every `Drupal\<module>\…` class reference in the docs against the source by
-PSR-4, so an invented class name fails the verify:
+submodule count matching the GATE), runs the doc-only consistency checks,
+and — via `--module-root` — grounds the docs in the source:
 
 ```bash
 python3 "$SKILL_DIR/verify.py" "$OUTPUT_DIR" --submodules <SUBMODULES> --module-root "$MODULE_ROOT"
 ```
 
+What it checks beyond structure — every line names the file and, where it
+can, the doc line:
+
+| Check | Line starts with | Fails? |
+| --- | --- | --- |
+| `Drupal\<module>\…` class reference resolves via PSR-4 | `unresolvable class reference` | yes |
+| A stated count matches the enumeration it introduces ("declares 5 services: …", "N routes:" + table) | `states N … but … has M` | yes |
+| A backticked code span next to a `path:line` citation is literally in those lines | `exists nowhere in that file` / `is not within cited lines` | yes / warning |
+| `Class::method()` + `path:line` — the line lies inside that method | `that line is inside \`other()\`` | yes |
+| A `Plugin ID` table id is declared by a non-abstract class | `plugin id … abstract` / `not declared by` / `no plugin attribute` | yes |
+| Every `@deprecated` public symbol is named in some doc | `@deprecated public symbols in … appear in no doc file` | yes |
+| A module-prefixed id string occurs in the source (negated mentions and runtime-interpolated ids are excluded) | `module-prefixed id … not found` | warning |
+| Two citations of one file with overlapping, unequal ranges | `citation ranges diverge` | warning |
+| Every `*.libraries.yml` entry is named in some doc | `library … mentioned in no doc file` | warning |
+| Every non-abstract plugin id is named in some doc (recall) | `N of M \`Type\` plugin ids are mentioned in no doc` | warning |
+| A bare module-named class (`<Module>FooSubscriber`) exists in the source | `no class of that name` | warning |
+
 - **`VERIFY OK`** → done.
-- **`VERIFY FAILED`** → fix what the `PROBLEM:` lines say: if a file an
-  explorer reported is missing (or one was written but not reported), spawn
-  one follow-up explorer for just that piece, update `metadata.json`, and
-  re-run the verifier. An **unresolvable class reference** PROBLEM means a doc
-  names a class that does not exist in the source — treat it like a
-  discrepancy: spawn one follow-up explorer for the affected category file to
-  correct or remove the reference (never edit the file yourself), then re-run.
-  Call out anything still unresolved.
+- **`VERIFY FAILED`** → fix what the `PROBLEM:` lines say. A *structural*
+  problem (a file an explorer reported is missing, or one was written but not
+  reported) → spawn one follow-up explorer for just that piece, update
+  `metadata.json`, re-run. Every *content* problem (unresolvable class,
+  miscount, synthesized span, wrong enclosing function, plugin id,
+  deprecation gap) is a discrepancy: spawn **one** follow-up explorer scoped
+  to the affected category file (`drupal-submodule-explorer` for a
+  `submodules/*.md` file), **quoting the verifier line verbatim** so it knows
+  exactly what to fix — never edit the file yourself — then re-run. A
+  deprecation gap names the *source* file, not a doc: route it to the
+  category that owns the symbol (`services` for PHP API, `ai-integration`'s
+  Deprecations section). Call out anything still unresolved.
+- **`WARNING:` lines do not fail the verify, but judge them before reporting.**
+  A *module-prefixed id* warning means a doc names an id string
+  (`<module>_…` / `<module>.…`) that occurs nowhere in the source — exactly
+  how an identifier reconstructed from a class name looks; unless the id is
+  legitimately derived at runtime or doc-composed notation, treat it like a
+  discrepancy. A *citation divergence* means one of the two files cites the
+  wrong lines — fix the one that does not match the source. A *library* or
+  *plugin recall* gap is usually real (`extension-points` owns libraries;
+  `plugins.md` may legitimately summarize a huge plugin set — say so). A
+  *bare class name* warning is an invented or misspelled class until proven
+  otherwise. Mention any warning you left standing in your final report.
 
 Then report back concisely: the `OUTPUT_DIR` path, the resolved core
 `VERSION`, the count of category and submodule files written, and a one-line
