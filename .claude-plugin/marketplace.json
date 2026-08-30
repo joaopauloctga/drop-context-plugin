@@ -1,0 +1,14 @@
+{
+  "name": "drop-context-ai",
+  "owner": {
+    "name": "joaopauloctga"
+  },
+  "description": "A marketplace of Claude Code plugins for turning Drupal modules, core modules, and core framework libraries into AI-consumable documentation and agent skills.",
+  "plugins": [
+    {
+      "name": "drop-context",
+      "source": "./",
+      "description": "Turns the Drupal modules, core modules, and core framework libraries installed in your repo into AI-consumable documentation and versioned agent skills — read from your own source, with no network access outside the two release-maintenance skills."
+    }
+  ]
+}

@@ -92,7 +92,7 @@ discovered by independent runs — every category file differs, some
 drastically (`services.md` 76 vs 23 lines, `configuration.md` 186 vs 84,
 `extension-points.md` 70 vs 190). Part is skill-version delta (the 2.2.2 run
 predates later improvements), part is run-to-run nondeterminism. Worth mining
-when calibrating discover quality: an `audit-discover-docs` pass over both
+when calibrating discover quality: an `audit-docs` pass over both
 sets would attribute the gap (older-skill artifacts vs real variance) for
 free, on perfectly controlled input.
 
@@ -104,7 +104,7 @@ grounded in its files, before C).* The grounding mechanism is the one
 validated in runs 7–8, but the full-run sequencing change has not been A/B'd
 per the protocol in `IMPROVEMENT-HISTORY.md`. On the next discover of a
 submodule-bearing module (metatag or feeds, Sonnet high): audit with
-`audit-discover-docs`, score by taxonomy class against the run-series
+`audit-docs`, score by taxonomy class against the run-series
 baselines — especially submodule-file claims and cross-file consistency —
 before treating the new flow as settled.
 
@@ -115,9 +115,9 @@ flagging, lead-in recount, catalog ownership additions) plus the wave-1
 verify gate. One A/B run validates all three — do it before adding any
 further prompt rules.
 
-### Port the submodule scope to `discover-drupal-core-module`
+### Port the submodule scope to `document-core-module`
 
-*Found 2026-08-17, adding the submodule scope to `discover-drupal-module` for
+*Found 2026-08-17, adding the submodule scope to `document-module` for
 huge ecosystems like eca.* The sequenced submodule wave and the
 `drupal-submodule-explorer` agent ARE shared with the core skill; what stayed
 contrib-only are the **scope modes** (root-only / submodules-only). Core
@@ -183,7 +183,7 @@ flat (schema `better_exposed_filters_filter_widget`; fixture
 the explorer picked it up; the generator copied it into 4 snippets and an
 agent following them gets silently-ignored settings.
 
-**Generate side shipped 2026-08-26** (`generate-module-skill/scripts/verify.py`:
+**Make side shipped 2026-08-26** (`make-skill/scripts/verify.py`:
 every ```yaml fence must parse, duplicate keys → PROBLEM, identifier-like
 scalar values must occur in the discover docs → WARNING; step-7 rule that an
 example's every key/value comes from the docs). **Discover side still open**:
@@ -211,7 +211,7 @@ grep the parent class body for `$this-><overridden>(` and flag any hit.
 
 ### Port `check_citation_anchoring()` to the module `verify.py` — 2026-08-26
 
-*Found auditing canvas 1.10.1 (`/audit-discover-docs canvas`).* The same wrong
+*Found auditing canvas 1.10.1 (`/drop-context:audit-docs canvas`).* The same wrong
 citation appeared in **three** files (`hooks.md:19`, `extension-points.md` §1,
 `ai-integration.md` §5): all three attributed the "this hook will be superseded
 by core's `hook_importmap_alter()` once `drupal.org/i/3398525` lands" note to
@@ -223,7 +223,7 @@ instead of read.
 
 The **core-library** `verify.py` already has exactly the check that catches
 this — `check_citation_anchoring()`
-(`ai/skills/discover-drupal-core-library/scripts/verify.py:295`): for a Markdown
+(`ai/skills/document-core-library/scripts/verify.py:295`): for a Markdown
 line that both names backticked symbols and carries a `path:line`, at least one
 named symbol must occur in a window around the cited line; when none does but a
 named symbol occurs *elsewhere* in the cited file, it warns. Here the doc line
@@ -295,7 +295,7 @@ are indistinguishable from real recall gaps — on a root-only run of a large
 ecosystem they are the *majority* of the verifier's output, which trains a
 reader to skim past the real ones.
 
-## Core-library pipeline (discover-drupal-core-library)
+## Core-library pipeline (document-core-library)
 
 *Skill + `drupal-core-library-explorer` agent landed 2026-08-24. First four
 runs (Core/Batch, Core/Flood, Core/Hook, Core/Queue on 11.4.4) were audited
@@ -411,7 +411,7 @@ FQCN check in verify.py (now shipped) catches deterministically. Standing
 recommendation: Sonnet high is fine for discover runs with the two-wave flow +
 FQCN verify; reserve Opus/max effort for especially API-dense modules.
 
-## Release maintenance skills (update-module-docs / upgrade-module-docs)
+## Release maintenance skills (retag-docs / add-release)
 
 ### Decide the `release_line` granularity (data inconsistency on the site)
 
@@ -427,7 +427,7 @@ importer's fallback). **User decision pending**; whichever wins, fix the
 contract example, re-generate or hand-fix the inconsistent stored values,
 and consider aligning `deriveReleaseLine()` in the site importer.
 
-## Generate pipeline (generate-module-skill)
+## Make pipeline (make-skill)
 
 *No open items — the 2026-08-21/22 entries (entity reference routing, YAML
 example checks, DOM contract) shipped 2026-08-26; see Done.*
@@ -573,7 +573,7 @@ and compare versions.
     hook (selectors the JS/AJAX depends on, attached libraries, template
     fallbacks) and enumerates every `*.libraries.yml` entry; deprecation
     sweep completeness rule.
-  - **`generate-module-skill`**: `references/entity.md` routing row (own
+  - **`make-skill`**: `references/entity.md` routing row (own
     entity types) with `fields.md` re-scoped to fields on *other* types;
     consumer-contract rule (the loader has only the skill — no pointers to
     the discover docs); YAML example rules. Its `verify.py` (366 → 872
@@ -620,8 +620,8 @@ and compare versions.
 - **Placeholder-aware FQCN resolution + negation-aware id warnings in
   verify.py** — 2026-08-21, from the views 11.3.13 re-audit that raised it.
   Both discover copies patched and kept byte-identical
-  (`discover-drupal-module/scripts/verify.py`,
-  `discover-drupal-core-module/verify.py`; `generate-module-skill`'s verifier
+  (`document-module/scripts/verify.py`,
+  `document-core-module/verify.py`; `make-skill`'s verifier
   shares neither function and is untouched). (a) **Templates**: a `{…}`/`<…>`
   placeholder following an FQCN match is detected via `TEMPLATE_TAIL_RE` and
   the reference is resolved as a *namespace-dir* existence check instead of a
@@ -698,7 +698,7 @@ and compare versions.
 - **Generate-skill verifier (structure + docs-grounding)** — 2026-08-14. The
   generate step is synthesis — the error class where all discover
   hallucination concentrated — but its verify step was manual `ls`/`wc`. New
-  `generate-module-skill/scripts/verify.py` (stdlib-only, single copy — the
+  `make-skill/scripts/verify.py` (stdlib-only, single copy — the
   core variant runs it from the contrib skill it already requires): checks
   frontmatter (name/metadata keys, module+version+type matched against the
   docs' `metadata.json`), the mandatory verify-installed section, the
@@ -738,9 +738,9 @@ and compare versions.
   2026-08-13, various audit rounds (workflow, flag ×2, feeds ×2).
 - **Scoped category refresh → shipped as the release-maintenance skill trio** —
   2026-08-18. `discover-module-release` slimmed to notes + classification +
-  recommendation; new `update-module-docs` (retag in place across a tiny
+  recommendation; new `retag-docs` (retag in place across a tiny
   delta, mechanical diff-quotable edits only, verify.py-gated) and new
-  `upgrade-module-docs` (new doc set alongside the old; diff-affected
+  `add-release` (new doc set alongside the old; diff-affected
   categories regenerated by scoped explorers, synthesis categories re-run
   whenever a wave-1 category changed — the grounding caveat this item
   recorded). Boundaries documented in `README.md` ("Release maintenance:
@@ -749,7 +749,7 @@ and compare versions.
   further: `discover-module-release` was dissolved — the user picks
   update vs upgrade themselves via the README + the d.o release page, and
   each of the two skills generates the `release.json` itself; the shared
-  references moved to `update-module-docs/references/`.)*
+  references moved to `retag-docs/references/`.)*
 - **Pack scripts / importer format mismatch** — resolved by design during the
   per-release rework (2026-08): the site's `dc:import-docs` reads the new
   `~/.drupal-context`-shaped layout (`metadata.json`, header-less files,
@@ -759,8 +759,8 @@ and compare versions.
 
 ## verify.py: plugin-id resolver misses constant-valued and FQ-named attributes (2026-08-26)
 
-Surfaced during `/discover-drupal-module canvas 1.10.1`. The `Plugin ID` check in
-`ai/skills/discover-drupal-module/scripts/verify.py` reported
+Surfaced during `/drop-context:document-module canvas 1.10.1`. The `Plugin ID` check in
+`ai/skills/document-module/scripts/verify.py` reported
 `carries no plugin attribute/annotation` for **24 of ~30** documented plugin ids that
 were in fact all correct. Two distinct parser gaps:
 
@@ -786,7 +786,7 @@ a doc that deliberately warns "there is no `Foo\Bar` class" trips
 `unresolvable class reference`. The module-prefixed-id check already excludes negated
 mentions; the class-reference check should do the same.
 
-**Re-confirmed 2026-08-26** by an independent `/audit-discover-docs canvas` pass: all
+**Re-confirmed 2026-08-26** by an independent `/drop-context:audit-docs canvas` pass: all
 **24** remaining `PROBLEM:` lines were checked one by one against the source and every
 flagged class does carry its attribute with a matching id — 22 of the constant-valued
 form (`id: self::PLUGIN_ID` / `#[RenderElement(self::PLUGIN_ID)]`) and 2 of the
@@ -873,7 +873,7 @@ then `title ASC` as the deterministic tie-break. Still worth checking on
 `context_modules` / `core_lib` whenever a bulk import lands many entities in
 one second — a `title`/`id` secondary sort costs nothing.
 
-## generate-module-skill: `composer require` constraint breaks on legacy `8.x-N.M` version tags (2026-08-29, found during batch skill generation)
+## make-skill: `composer require` constraint breaks on legacy `8.x-N.M` version tags (2026-08-29, found during batch skill generation)
 
 Surfaced by an Opus validator pass while batch-generating skills for the 30
 modules discovered but not yet generate-skilled. `field_permissions` (version
@@ -881,7 +881,7 @@ tag `8.x-1.5`) got `composer require 'drupal/field_permissions:^8.x-1.5'` in
 its SKILL.md — Composer's `VersionParser` cannot parse `^8.x-1.5` at all
 (confirmed with Composer 2.8.10), so the copy-pasteable install command
 hard-fails. Root cause is the generator template's literal substitution at
-`ai/skills/generate-module-skill/SKILL.md:292`: `drupal/{module}:^{version}`,
+`ai/skills/make-skill/SKILL.md:292`: `drupal/{module}:^{version}`,
 which is only valid for semver-shaped versions. It happened to come out right
 for `key` (`8.x-1.22` → `^1.22`) and `feeds` (`8.x-3.2` → `^3.2`) only because
 those two runs caught and fixed it ad hoc — it is not handled systematically.
@@ -892,7 +892,7 @@ already used ad hoc for `key`/`feeds`. Worth an audit pass over all previously
 generated skills for modules with legacy `8.x-N.M` tags to catch any other
 instance of this same bug.
 
-## generate-module-skill: generated prose sometimes points readers at discover-doc filenames instead of skill references (2026-08-29, found during batch skill generation)
+## make-skill: generated prose sometimes points readers at doc-set filenames instead of skill references (2026-08-29, found during batch skill generation)
 
 Surfaced by Opus validators during the same batch run as the composer-constraint
 bug above. Two independent instances so far: `rabbit_hole/1.2/references/use.md`
@@ -915,10 +915,10 @@ flags any prose mention of a discover-doc-only filename
 `ai-integration.md`) inside a generated skill file — those names should never
 leak into consumer-facing output.
 
-## generate-module-skill: unquoted `generated_at` timestamp can break YAML-timestamp-sensitive tooling (2026-08-29, found during batch skill generation)
+## make-skill: unquoted `generated_at` timestamp can break YAML-timestamp-sensitive tooling (2026-08-29, found during batch skill generation)
 
 Surfaced by an Opus validator on `tool/1.0.0-beta6`. The generator template
-(`ai/skills/generate-module-skill/SKILL.md:315`) emits `generated_at:
+(`ai/skills/make-skill/SKILL.md:315`) emits `generated_at:
 2026-08-29T17:24:19Z` unquoted in every skill's frontmatter. Standard YAML
 resolves that shape to a native timestamp type, not a string. Harmless for the
 Symfony YAML parser used in these validation passes, but `verify.py:726` runs

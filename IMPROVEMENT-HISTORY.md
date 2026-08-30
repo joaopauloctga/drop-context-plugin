@@ -2,10 +2,10 @@
 
 Background for future skill-improvement sessions. This is the distilled record
 of the 2026-08-13 improvement series (7 discover runs, 7 audits, ~10 shipped
-changes). Read this before touching `discover-drupal-module`,
-`discover-drupal-core-module`, or `agents/drupal-module-explorer.md`.
+changes). Read this before touching `document-module`,
+`document-core-module`, or `agents/drupal-module-explorer.md`.
 Deferred work lives in `ROADMAP.md`; the reusable audit protocol in
-the `audit-discover-docs` skill.
+the `audit-docs` skill.
 
 ## Current architecture (as of 2026-08-26)
 
@@ -250,7 +250,7 @@ names, and keep unanimity only as the unqualified fallback.
 - **Wave-1 is near-flawless, not flawless** — the first counter-example to
   "every error in the series lived in synthesis C" surfaced in a 2026-08-19
   audit of core `media` 11.4.5 (outside the tracked 2026-08-13 series, done
-  with the `audit-discover-docs` skill): `configuration.md`, a wave-1 file,
+  with the `audit-docs` skill): `configuration.md`, a wave-1 file,
   misnamed the thumbnail queue as `media_thumbnail_downloader` — a plausible
   guess from the worker class's short name (`ThumbnailDownloader`) rather
   than a grep of the plugin's actual `id:` attribute — while `entities.md`
@@ -271,7 +271,7 @@ names, and keep unanimity only as the unqualified fallback.
 
 1. Pick one module; run discover **before** the change and **after**, same
    model + effort (Sonnet high is the baseline).
-2. Audit both with the `audit-discover-docs` skill (focus: the two C files;
+2. Audit both with the `audit-docs` skill (focus: the two C files;
    ≥20 verified claims; nonexistence rule; cross-file consistency).
 3. Score errors **by taxonomy class**, and for each error check whether the
    truth already existed in wave-1 files — that tells you whether the failure
@@ -281,7 +281,7 @@ names, and keep unanimity only as the unqualified fallback.
 
 ## Where everything lives
 
-- Skills: `ai/skills/discover-drupal-module/` (+ `-core-`) — SKILL.md,
+- Skills: `ai/skills/document-module/` (+ `-core-`) — SKILL.md,
   `scripts/download.py`, `scripts/verify.py` (core keeps copies:
   `download-core-module.sh`, `verify.py`). `verify.py --partial --module
   <name>` is the wave-1 gate mode.
@@ -289,7 +289,8 @@ names, and keep unanimity only as the unqualified fallback.
   grounding rules, Output Contract (MANIFEST / KEY-FACTS / DISCREPANCIES) —
   and `ai/agents/drupal-submodule-explorer.md` — the grounded submodule
   worker (same contract, no KEY-FACTS).
-- Audit skill: `ai/skills/audit-discover-docs/`.
+- Audit skill: `ai/skills/audit-docs/`.
 - Deferred work: `ai/ROADMAP.md`.
-- Output: docs `~/.drupal-context/{modules,core}/…` + `metadata.json`;
-  source cache `${TMPDIR}/drupal-context-<user>/…`.
+- Output: docs `~/.drop-context/docs/{modules,core}/…` + `metadata.json`,
+  read directly from the Drupal repo the discover skill is run in — no
+  download, no source cache.

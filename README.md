@@ -1,176 +1,250 @@
-# `ai/` — Agent tooling for Drupal Context
+# drop-context — agent skills for documenting Drupal modules
 
-This folder is the **source of truth** for the agent tooling that turns Drupal
-modules into AI-consumable documentation and agent skills. Everything else in
-the workspace (`.claude/`, `.agents/`) only symlinks back here.
+A Claude Code plugin that reads a Drupal module (contrib, custom, or core) or
+a Drupal core framework library **directly out of the Drupal repo you run it
+in**, and writes a structured, AI-consumable analysis to
+`~/.drop-context/docs/` — a single user-level location, the same no matter
+which repo you're standing in. A second stage turns that analysis into a
+focused, installable agent skill (`dc-<module-name>`) so other agents can
+build on the module without re-reading its source every time.
 
-## Layout
-
-| Path | What it is |
-| --- | --- |
-| `skills/discover-drupal-module/` | Discover a **contrib** module → category docs + `metadata.json`. Bundles its own downloader (`scripts/download.py`) and verifier (`scripts/verify.py`). |
-| `skills/discover-drupal-core-module/` | Same for **core** modules (sparse-downloads only the module subtree). Keeps its own copies of the scripts. |
-| `skills/discover-drupal-core-library/` | Document a framework library below `core/lib/Drupal` → stable summary/architecture/API/usage docs, optional source-driven topics, and search-oriented `metadata.json`. Uses direct exploration for small libraries and survey/research/synthesis waves for large ones. |
-| `skills/generate-module-skill/` / `generate-core-module-skill/` | Turn discovered docs into an installable `dc-<module-name>` agent skill. Bundles its own verifier (`scripts/verify.py`) that checks the generated skill's structure and grounds every identifier in it against the discover docs; the core variant reuses the contrib copy. |
-| `skills/update-module-docs/` | Version-bump maintenance for a documented module (small delta: retag in place + release.json). Hosts the shared release-maintenance references (`docs-impact.md`, `output-contract.md`, …). |
-| `skills/upgrade-module-docs/` | Version-bump maintenance for real but contained deltas (new doc set alongside + release.json; explorer-regenerated categories). |
-| `skills/boost-*/` | Legacy generated skills (the pipeline's *product*, not tools — being replaced by `dc-*` naming). |
-| `agents/drupal-module-explorer.md` | The category worker agent the discover skills orchestrate. Exploration methodology, category contracts, and the shared output contract live here. |
-| `agents/drupal-submodule-explorer.md` | The submodule worker agent — documents submodules in condensed `submodules/*.md` files, **grounded in the already-written category docs** for parent symbols. Runs after wave 1, in batches of ≤8 submodules. |
-| `agents/drupal-core-library-explorer.md` | Multi-mode worker for core libraries: surveys source topology, writes per-workstream evidence notes, and synthesizes the stable library documentation without imposing module categories. |
-| `skills/audit-discover-docs/` | Deep, read-only quality audit of generated discover docs — verifies claims against the module source and delivers a `path:line`-evidenced report. |
-| `skills/migrate-discover-docs/` | Migrate legacy `storage/…/discover` docs (old 6-line-header format) into the current format under `~/.drupal-context/`, then audit-and-fix the content against the module source. Bundles the mechanical converter (`scripts/migrate.py`). |
-| `ROADMAP.md` | Deferred improvement ideas, with date + context. |
-| `IMPROVEMENT-HISTORY.md` | The distilled record of past improvement rounds — **read it before changing the discover skills or the explorer agent.** |
-
-## Running the pipeline
-
-Everything is invoked as Claude Code skills (or the equivalent in any agent
-runner that loads `SKILL.md` files):
+## Installation
 
 ```text
-/discover-drupal-module <machine_name> [<version>]     # e.g. flag 5.0.3 — version optional, defaults to latest stable
-/discover-drupal-module eca without submodules         # root-only scope: huge ecosystems, submodules deferred
-/discover-drupal-module eca only submodules            # completion pass over an existing root-only run (fresh context)
-/discover-drupal-core-module <machine_name> [<core_version>]
-/discover-drupal-core-library Core/Ajax [<project-or-drupal-root>]
-/generate-module-skill <machine_name> [<version>]      # run after discover
-/audit-discover-docs <machine_name> [<version>]        # deep QA of a discover run (read-only)
-/migrate-discover-docs <machine_name> [<version>]      # legacy storage/…/discover docs → current format + audit-fix
+/plugin marketplace add joaopauloctga/drupal-context-ai
+/plugin install drop-context@drop-context-ai
 ```
 
-What a discover run does, in order:
+**Prerequisite: `python3` ≥ 3.9** (standard library only — nothing to `pip
+install`). That's it; every bundled script is stdlib-only Python or plain
+bash, so nothing else needs to be on your machine.
 
-1. **Download + GATE** — the bundled script fetches the source into a per-user
-   temp cache and prints a machine-parseable `GATE OK` block (paths, version,
-   submodules). No gate, no explorers.
-2. **Wave 1** — explorers A (metadata/UI) and B (code/API) run in parallel
-   and write the factual root category files.
-3. **Submodule wave** — when the module ships submodules (and the scope
-   includes them), `drupal-submodule-explorer` batches (≤8 submodules each,
-   in parallel) write `submodules/*.md`, **grounded in wave 1's files** for
-   parent symbols. The user can scope a run "without submodules" (root-only;
-   the skipped list is recorded in `metadata.json`) and complete it later
-   with an "only submodules" pass that runs just this wave.
-4. **Synthesis wave** — explorer C writes `extension-points.md` and
-   `ai-integration.md` **grounded in every file written before it**, reading
-   source only for what they don't cover. Both grounded waves report any
-   conflict they verified via a `DISCREPANCIES` block (the orchestrator then
-   re-checks the disputed file).
+To update later:
+
+```text
+/plugin marketplace update drop-context-ai
+/plugin update drop-context
+```
+
+## Releases and versioning
+
+The plugin carries a plain semver `version` in
+`.claude-plugin/plugin.json`, and each release is marked by a git tag of the
+form `{name}--v{version}` — `drop-context--v1.0.0`. The tag is what a
+marketplace resolves an installed version against, so the two must not drift.
+`claude plugin tag` creates it and refuses to if `plugin.json` and the
+enclosing marketplace entry disagree:
+
+```bash
+claude plugin validate .            # manifests well-formed?
+claude plugin tag --dry-run         # what would be tagged, without tagging
+claude plugin tag --push            # tag HEAD and push it to origin
+```
+
+`tag` also refuses on a dirty working tree, so a tag always points at
+committed state. Cutting a release is therefore: bump `version` in
+`plugin.json`, commit, `claude plugin tag --push`.
+
+## What it does
+
+Run a document skill **from inside a Drupal repo** (or point it at one). It
+locates the module on disk — `web/modules/contrib/<module>`,
+`web/modules/custom/<module>`, or `web/core/modules/<module>` — resolves its
+version from what's already there (the module's own `.info.yml`,
+`composer.lock`, or `Drupal::VERSION` for core), and writes category Markdown
+files plus a `metadata.json` manifest to
+`~/.drop-context/docs/modules/<module>/<version>/` (or `docs/core/…` for a
+core module) — the source is read from the repo you're standing in, but the
+output always lands at this single user-level location, never inside that
+repo. **Nothing is downloaded and nothing is fetched from the network** — the
+document, make, and audit skills never make an HTTP request.
+
+```text
+/drop-context:document-module <machine_name>                 # e.g. flag — reads web/modules/contrib/flag
+/drop-context:document-module eca without submodules          # root-only scope: huge ecosystems, submodules deferred
+/drop-context:document-module eca only submodules              # completion pass over an existing root-only run
+/drop-context:document-core-module <machine_name>              # e.g. views — reads web/core/modules/views
+/drop-context:document-core-library Core/Ajax                  # reads web/core/lib/Drupal/Core/Ajax
+/drop-context:make-skill <machine_name> [<version>]        # run after document — turns docs into a dc-<module> skill
+/drop-context:audit-docs <machine_name> [<version>]         # deep, read-only QA of a document run
+```
+
+A **custom module** (`web/modules/custom/<module>`) can be documented too —
+something the old, download-only pipeline couldn't do, since it only knew how
+to fetch from drupal.org.
+
+If the module can't be found, or its version can't be resolved from what's on
+disk, the skill **asks you** rather than guessing — see "Version and module
+resolution" below.
+
+What a document run does, in order:
+
+1. **Resolve + gate** — a bundled Python script locates the module inside the
+   repo, resolves its version, creates the output directory, and enumerates
+   submodules. No gate, no explorers.
+2. **Wave 1** — two explorer subagents run in parallel and write the factual
+   root category files (entities, plugins, services, hooks, events,
+   configuration, permissions, routes).
+3. **Submodule wave** — when the module ships submodules, a batch of
+   submodule-explorer subagents writes `submodules/*.md`, grounded in wave
+   1's files.
+4. **Synthesis wave** — one more explorer writes `extension-points.md` and
+   `ai-integration.md`, grounded in every file written before it.
 5. The orchestrator writes `summary.md` + `metadata.json` and runs the
-   verifier.
+   bundled verifier, which cross-checks the output against the module source.
 
-Output lands in `~/.drupal-context/modules/<module>/<version>/` (contrib) or
-`~/.drupal-context/core/<version>/<module>/` (core). Source cache lives in
-`${TMPDIR}/drupal-context-<user>/…` and is disposable.
+Then make a skill from the result:
 
-Core-library discovery is a separate source-local flow. It reads an installed
-Drupal checkout at `core/lib/Drupal`, resolves the version from
-`Drupal::VERSION`, and writes to
-`~/.drupal-context/core-libraries/<version>/<Core-or-Component>/<library>/`.
-The four stable files are `summary.md`, `architecture.md`, `api.md`, and
-`usage.md`; large libraries may add independently retrievable `topics/*.md`
-entries. `metadata.json` records a source digest and assigns every target PHP
-file to exactly one documentation entry for mechanical coverage verification.
+```text
+/drop-context:make-skill flag
+```
 
-**Model/effort tip**: Sonnet at high effort is the validated operating point
-for discover runs; reserve Opus or max effort for exceptionally API-dense
-modules. (See `IMPROVEMENT-HISTORY.md` for the data behind this.)
+This reads `~/.drop-context/docs/modules/flag/<version>/`, writes a focused
+`dc-flag` skill to `~/.drop-context/docs/skills/flag/<version>/`, and offers
+to **symlink** it into your project's agent skills directory
+(`.claude/skills/`, `.agents/skills/`, …) under the name `dc-flag` — an
+**absolute** symlink (the target now lives outside the project entirely, so a
+relative link would not resolve). Regenerating the skill later updates what
+agents load with no separate reinstall step.
+
+## Output location
+
+Everything this plugin writes lands under `~/.drop-context/docs/` — a single
+location shared by every repo, never inside the repo you ran the skill from
+(override the base with the `DROP_CONTEXT_HOME` environment variable, e.g. to
+point it at a scratch directory):
+
+```text
+~/.drop-context/
+└── docs/
+    ├── modules/<module>/<version>/          # contrib + custom module docs
+    ├── core/<version>/<module>/             # core module docs
+    ├── core-libraries/<version>/<Core-or-Component>/<library>/   # core framework library docs
+    └── skills/<module>/<version>/           # generated dc-<module> skills, before symlinking
+```
+
+The `docs/` level is mandatory, not decorative: `~/.drop-context/` is also the
+home of the separate `drop-context` CLI, which stores its own `app.json`,
+`cache/`, `agents/`, and — directly under `~/.drop-context/skills/` (no
+`docs/`) — the skills *it* installs, by name. Nesting this plugin's output
+under `docs/` is the only thing keeping this plugin's generated `skills/` from
+colliding with the CLI's own `skills/` directory. This plugin never writes to
+`~/.drop-context/skills/`, `~/.drop-context/app.json`, or anything else the
+CLI owns.
+
+Since output no longer lands inside your project, there is nothing to add to
+your project's `.gitignore` for it.
+
+## The read-only guarantee
+
+Every module/library source path this plugin resolves — `MODULE_ROOT`,
+`LIBRARY_ROOT`, `CORE_ROOT` — is the **user's real, version-controlled Drupal
+source**. It is read-only: every skill and worker agent only ever `Read`,
+`Glob`, or `grep`/`find` under it. Every write, in every skill, goes only
+under `~/.drop-context/docs/` (or `DROP_CONTEXT_HOME/docs` when overridden).
+Nothing this plugin does touches `web/modules/`, `web/core/`, or any other
+part of your checkout.
+
+The two exceptions to "zero network" — `retag-docs` and `add-release` — are
+release-maintenance skills for a module that's already documented. They diff
+two tags to decide how much of the doc set changed, which needs both tags'
+source on disk at once; an installed repo only ever holds one checked-out
+version, so those two skills download the two tags into a disposable temp
+cache instead of reading your repo. They never write to `web/` either.
 
 ## Release maintenance: which skill when
 
 When a documented module ships a new release, **you** pick the skill — there
 is no router skill. The Drupal.org release page usually tells you everything
 you need: breaking changes announced? core support changed? or just fixes?
-Both skills also **generate the release's `release.json`** (notes,
-classification, issue links — authored from commits/MRs when the d.o page is
-thin) into the version's doc-set directory, where the manual copy to the
-site's `content/modules/` carries it along (staging is deliberately outside
-both skills' scope).
+Both skills also generate the release's `release.json` (notes, classification,
+issue links) into the version's doc-set directory.
 
 ```text
-/update-module-docs <module> [<current>] <target>  # tiny delta: retag docs in place + release notes
-/upgrade-module-docs <module> [<current>] <target> # real but contained delta: new doc set alongside + release notes
-/discover-drupal-module <module> <target>          # sweeping delta / new line / first discovery
+/drop-context:retag-docs <module> [<current>] <target>    # tiny delta: retag docs in place + release notes
+/drop-context:add-release <module> [<current>] <target>   # real but contained delta: new doc set alongside + release notes
+/drop-context:document-module <module> <target>            # sweeping delta / new line / first documentation
 ```
 
 | Situation | Skill | Result |
 |-----------|-------|--------|
-| Delta doesn't touch documented surface (fixes, tests, style; at most mechanical fact edits like a core-requirement line) — "the dev updates the module and nothing changes" | `update-module-docs` | The existing doc set is **retagged in place** to the target version (one doc set in the line, moved forward) + the target's `release.json` |
-| Real changes but **contained** — features added, surface removed, breaking changes, architecture intact (e.g. eca `3.0.14 → 3.1.0`) | `upgrade-module-docs` | A **new doc set is created alongside** the current one (both versions stay documented); only diff-affected categories are regenerated (by scoped explorers), the rest copied forward + the target's `release.json` |
-| **Sweeping** — near-rewrite or a new major line (e.g. eca `2.1.x → 3.0.x`: not worth grounding on the old docs), or the module was never documented, or the delta can't be diffed | `discover-drupal-module` | Full fresh discover (its `release.json`, if wanted, comes from a later `update-module-docs` run on the same version — the already-documented path) |
+| Delta doesn't touch documented surface (fixes, tests, style; at most mechanical fact edits like a core-requirement line) | `retag-docs` | The existing doc set is **retagged in place** to the target version + the target's `release.json` |
+| Real changes but **contained** — features added, surface removed, breaking changes, architecture intact | `add-release` | A **new doc set is created alongside** the current one; only diff-affected categories are regenerated, the rest copied forward + the target's `release.json` |
+| **Sweeping** — near-rewrite or a new major line, or the module was never documented, or the delta can't be diffed | `document-module` | Full fresh document run |
 
-Skipping intermediate tags is the norm, not a shortcut: both skills diff the
-*cumulative* `current → target` source delta (which carries the same
-information as chaining every hop), so update `3.1.0 → 3.1.6` directly rather
-than hop-by-hop — intermediate releases get no doc set of their own. If the
-cumulative delta is too big for update, the answer is upgrade for the same
-jump, never a chain of updates.
+The names carry the distinction now: `retag-docs` retags one doc set in
+place, `add-release` adds a second doc set alongside the first. Skipping
+intermediate tags is the norm — both skills diff the *cumulative*
+`current → target` source delta, so `3.1.0 → 3.1.6` runs directly rather than
+hop-by-hop. Both gate their own preconditions and refuse across the boundary
+(`retag-docs` refuses prose work, `add-release` refuses rewrites) — a refusal
+names the right skill and changes nothing on disk.
 
-Both skills gate their own preconditions and refuse across the boundary
-(update refuses prose work; upgrade refuses rewrites) — a refusal names the
-right skill and changes nothing on disk. `update-module-docs` is the sanctioned
-exception to "never hand-edit generated docs": its edits are limited to
-mechanical, diff-quotable fact substitutions, and `verify.py` gates the result.
+## Version and module resolution
 
-The design was validated on 6 independently audited runs (workflow 2.1.10/
-2.2.2, eca 3.0.14→3.1.0→3.1.6: retag, notes-only, refusal→upgrade handoff,
-removed- and added-submodule variants, importer round-trips) — the full
-audit record lives at the workspace root in
-`plans/workflow-release-skill-ground-truth.md`.
+The resolver never guesses. For a contrib or custom module it reads, in
+order: the module's own `.info.yml` `version:` key, then `composer.lock`'s
+`drupal/<project>` entry. A core module's version is always the repo's own
+`Drupal::VERSION` — never its `.info.yml`, which typically carries the
+literal placeholder string `version: VERSION` (a drupal.org packaging-time
+token, not a real version).
+
+If the module can't be found anywhere in the repo, or a contrib/custom
+module's version can't be resolved from either source, the skill stops and
+asks you — offering to install the module, take an explicit path, or supply a
+version label (`dev`, a short git SHA, or anything else you choose) — rather
+than silently fabricating one.
 
 ## Validating the output
 
 Three layers, cheapest first:
 
-1. **The bundled verifier** (runs automatically as the discover skill's last
-   step; re-run it any time):
+1. **The bundled verifier** runs automatically as the document skill's last
+   step, and cross-checks `metadata.json` against the files on disk in both
+   directions, plus grounds the docs in the source (every class reference
+   resolves, every stated count matches its enumeration, every cited
+   `path:line` is real).
+2. **Quick manual smoke checks** — see `CONTRIBUTING.md` if you're modifying
+   the skills themselves.
+3. **Deep audit** — `/drop-context:audit-docs <machine_name> [<version>]`
+   verifies claims against source at the line level and delivers a
+   severity-ranked, `path:line`-evidenced report. It is read-only by contract.
 
-   ```bash
-   python3 skills/discover-drupal-module/scripts/verify.py \
-     ~/.drupal-context/modules/<module>/<version> \
-     --submodules <N> \
-     --module-root <path-to-cached-source>
-   ```
+## Where the output can go next
 
-   It cross-checks `metadata.json` against the files on disk in both
-   directions, runs doc-only consistency checks (a stated count vs the
-   enumeration it introduces; two files citing the same code with different
-   line ranges), and grounds the docs in the source: every
-   `Drupal\<module>\…` class reference resolves via PSR-4, every backticked
-   module-prefixed id occurs in the source, a code span quoted next to a
-   `path:line` citation is literally in those lines, a `Class::method()` +
-   `path:line` pair really lands inside that method, every `Plugin ID` in a
-   table is declared by a non-abstract class, and every `@deprecated` public
-   symbol is documented; libraries and plugin ids nobody names are warned
-   about. `VERIFY OK` plus the `*_CHECKED=n` counters is the pass signal. The
-   discover skills also run it in `--partial` mode as a **wave-1 gate**,
-   before the submodule and synthesis waves ground themselves in those files.
+This plugin is self-contained: everything it produces is plain Markdown and
+JSON under `~/.drop-context/docs/`, and the generated `dc-<module>` skills are
+usable the moment they are symlinked into your project. Nothing below is
+required to use it.
 
-2. **Quick manual smoke checks** — `services.md` must have its three sections
-   (Container Services / Public PHP API / Procedural API); `events.md` must
-   cite dispatch sites as `Class::method()`; any "N hooks/plugins" count
-   should be recountable; submodule docs must not contain "presumably".
+It is also the first stage of a longer pipeline. The same doc sets can be
+published to **[dropcontext.dev](https://dropcontext.dev)**, a Drupal site
+that imports them (one entity per documented release, one per doc file) and
+serves them anonymously as JSON. The separate `drop-context` PHP CLI reads
+that API and ships `drop-context-mcp`, a stdio MCP server that gives any agent
+`list_modules` / `get_module` / `get_doc` tools over the published catalog —
+so a module documented once is available to agents that never had the source.
 
-3. **Deep audit** — run `/audit-discover-docs <module> [<version>]` (it
-   auto-detects contrib vs core and defaults to the newest discovered
-   version). It encodes the full audit
-   protocol: verify claims against source at the line level, the
-   nonexistence rule (inheritance-aware — never trust a single grep), cross-
-   file consistency, orphan/procedural completeness sweeps, and a report
-   format that requires `path:line` evidence for every error. It is
-   **read-only** by contract and saves any report file *outside* the docs
-   directory. Confirmed errors are fixed by spawning a follow-up explorer
-   scoped to the affected file (`drupal-module-explorer` for category files,
-   `drupal-submodule-explorer` for `submodules/*.md`) — never by editing
-   generated docs by hand.
+The two directions are complementary: this plugin documents what is installed
+in *your* repo, including custom modules that exist nowhere else; the
+published catalog covers contrib releases already documented by someone else.
 
-## Improving the tooling
+## What's in this plugin
 
-- Read `IMPROVEMENT-HISTORY.md` first — it records what was tried, what
-  failed, the error taxonomy, and which mechanism covers each error class.
-- Evaluate any change with the A/B protocol described there: same module,
-  same model/effort, audit before and after, score errors by class.
-- Commit the current state before changing skills/agent — rollback is free.
-- Park non-urgent ideas in `ROADMAP.md` (with date + context) instead of
-  widening the current task.
+| Path | What it is |
+| --- | --- |
+| `skills/document-module/` | Document a **contrib or custom** module → category docs + `metadata.json`. Bundles the resolver (`scripts/resolve.py`) and verifier (`scripts/verify.py`). |
+| `skills/document-core-module/` | Same for **core** modules — reuses `document-module`'s resolver via a sibling path; keeps its own copy of the verifier. |
+| `skills/document-core-library/` | Document a framework library below `core/lib/Drupal` → stable summary/architecture/API/usage docs, optional source-driven topics, and search-oriented `metadata.json`. |
+| `skills/make-skill/` / `make-core-skill/` | Turn documented docs into an installable `dc-<module-name>` agent skill, symlinked into your project's agent skills directory. |
+| `skills/audit-docs/` | Deep, read-only quality audit of generated documentation — verifies claims against the module source and delivers a `path:line`-evidenced report. |
+| `skills/retag-docs/` | Version-bump maintenance for a documented module (small delta: retag in place + release.json). One of the two networked skills. |
+| `skills/add-release/` | Version-bump maintenance for real but contained deltas (new doc set alongside + release.json). The other networked skill. |
+| `agents/drupal-module-explorer.md` | The category worker agent the document skills orchestrate. |
+| `agents/drupal-submodule-explorer.md` | The submodule worker agent — documents submodules in condensed `submodules/*.md` files, grounded in the already-written category docs. |
+| `agents/drupal-core-library-explorer.md` | Multi-mode worker for core libraries: surveys source topology, writes per-workstream evidence notes, and synthesizes the stable library documentation. |
+
+For contributing to this plugin itself — the editing rules, the machine-parseable
+contracts that must not break, and how to validate a change — see
+`CONTRIBUTING.md`. `IMPROVEMENT-HISTORY.md` is the distilled record of past
+improvement rounds to the document skills and explorer agents.
