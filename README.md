@@ -11,8 +11,8 @@ build on the module without re-reading its source every time.
 ## Installation
 
 ```text
-/plugin marketplace add joaopauloctga/drupal-context-ai
-/plugin install drop-context@drop-context-ai
+/plugin marketplace add joaopauloctga/drop-context-plugin
+/plugin install drop-context@drop-context-plugin
 ```
 
 **Prerequisite: `python3` ≥ 3.9** (standard library only — nothing to `pip
@@ -22,7 +22,7 @@ bash, so nothing else needs to be on your machine.
 To update later:
 
 ```text
-/plugin marketplace update drop-context-ai
+/plugin marketplace update drop-context-plugin
 /plugin update drop-context
 ```
 
@@ -240,6 +240,7 @@ published catalog covers contrib releases already documented by someone else.
 | `skills/audit-docs/` | Deep, read-only quality audit of generated documentation — verifies claims against the module source and delivers a `path:line`-evidenced report. |
 | `skills/retag-docs/` | Version-bump maintenance for a documented module (small delta: retag in place + release.json). One of the two networked skills. |
 | `skills/add-release/` | Version-bump maintenance for real but contained deltas (new doc set alongside + release.json). The other networked skill. |
+| `skills/drupal-entity-field-constraints/` | Standalone how-to skill (not part of the document pipeline): writing and attaching Drupal entity/field validation constraints. |
 | `agents/drupal-module-explorer.md` | The category worker agent the document skills orchestrate. |
 | `agents/drupal-submodule-explorer.md` | The submodule worker agent — documents submodules in condensed `submodules/*.md` files, grounded in the already-written category docs. |
 | `agents/drupal-core-library-explorer.md` | Multi-mode worker for core libraries: surveys source topology, writes per-workstream evidence notes, and synthesizes the stable library documentation. |
