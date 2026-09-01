@@ -87,7 +87,8 @@ What a document run does, in order:
    configuration, permissions, routes).
 3. **Submodule wave** — when the module ships submodules, a batch of
    submodule-explorer subagents writes `submodules/*.md`, grounded in wave
-   1's files.
+   1's files. Never more than **4** subagents run at once, in any wave: a
+   larger set is queued in order and drained as each one finishes.
 4. **Synthesis wave** — one more explorer writes `extension-points.md` and
    `ai-integration.md`, grounded in every file written before it.
 5. The orchestrator writes `summary.md` + `metadata.json` and runs the

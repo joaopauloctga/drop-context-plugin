@@ -84,9 +84,11 @@ def resolve_lib_root(base: Path, search_ancestors: bool) -> Path:
     ]
     if not matches:
         raise GateError(
-            f"could not find core/lib/Drupal from {base.expanduser().resolve()}; "
-            "pass the Composer project root, Drupal docroot, core directory, or "
-            "core/lib/Drupal path explicitly"
+            f"could not find core/lib/Drupal from {base.expanduser().resolve()} — "
+            "this directory does not contain a Drupal installation. Ask the USER "
+            "to re-run from inside a Drupal repo, or to supply the Composer "
+            "project root, Drupal docroot, core directory, or core/lib/Drupal "
+            "path explicitly"
         )
     return matches[0]
 
@@ -449,6 +451,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except GateError as exc:
         print(f"GATE FAILED: {exc}", file=sys.stderr)
+        print(
+            "AGENT-INSTRUCTION: STOP NOW. Do NOT search the filesystem for a "
+            "Drupal installation, do NOT cd elsewhere, do NOT retry with other "
+            "paths. Report the error above to the user and ask how to proceed; "
+            "only the user decides where Drupal is.",
+            file=sys.stderr,
+        )
         return 1
 
 

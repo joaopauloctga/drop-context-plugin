@@ -87,9 +87,14 @@ under `core/tests/Drupal` and the test modules/tests under
 `core/modules/*/tests/`, such as `batch_test` or `cron_queue_test`). The gate
 does not download Drupal and never modifies the checkout.
 
-If the script exits non-zero or prints `GATE FAILED`, stop and report that exact
-error. Do not search for another core checkout or silently reinterpret the
-library. If an output already exists, the gate refuses to overwrite it. Use
+If the script exits non-zero or prints `GATE FAILED`, **the run is over —
+stop immediately.** Tell the user what the error says (typically: this repo
+does not contain a Drupal installation) and that they can re-run from inside
+a Drupal repo or pass the Drupal root / `core/lib/Drupal` path explicitly.
+Do **not** search the filesystem for another core checkout — no `find`, no
+globbing, no walking ancestors or sibling directories, no `cd` elsewhere, no
+retrying the gate with other paths — and do not silently reinterpret the
+library. Where Drupal lives is the user's decision, never yours. If an output already exists, the gate refuses to overwrite it. Use
 `--replace-generated` only when the user explicitly requested regeneration; it
 removes known generated Markdown/metadata and refuses unknown artifacts.
 
@@ -142,9 +147,14 @@ missing or overlapping, send one follow-up to correct the plan before research.
 
 ### Distributed path — parallel research
 
-Launch one explorer in `research` mode per workstream, in parallel up to the
-runner's safe concurrency; use additional batches when necessary. Every prompt
-contains only that workstream plus the common gate values:
+Launch one explorer in `research` mode per workstream — **never more than 4
+in flight at once**. When the plan has more than 4 workstreams, launch the
+first 4 (in plan order), keep the rest in an ordered queue, and start the
+next queued one each time a running explorer returns its manifest, until
+every workstream has a note; if the runner can only launch in rounds, run
+rounds of at most 4 and wait for one to finish before starting the next. The
+same cap covers any focused follow-up you send for a missing note. Every
+prompt contains only that workstream plus the common gate values:
 
 > Work in `research` mode for `<LIBRARY>` at `<LIBRARY_ROOT>`, Drupal
 > `<VERSION>`. `CORE_ROOT=<CORE_ROOT>`, `INVENTORY=<INVENTORY>`,

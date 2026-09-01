@@ -102,12 +102,16 @@ A refusal changes nothing on disk and is a successful run.
    prose yourself. Spawn `drupal-module-explorer` for affected root
    categories and `drupal-submodule-explorer` for affected/new submodule
    docs, batched as in the document-module skill, with the **target** source as
-   `MODULE_ROOT` and `$DOCS_BASE/$target` as the output dir. Grounding rules
-   from the document-module skill apply unchanged — in particular, if any wave-1
-   category (entities/plugins/services/hooks/events/…) was regenerated, the
-   synthesis categories (`extension-points.md`, `ai-integration.md`) must be
-   regenerated after them, grounded on the new files, even if their own
-   source areas look untouched in the diff.
+   `MODULE_ROOT` and `$DOCS_BASE/$target` as the output dir. That skill's
+   **concurrency cap applies here too — never more than 4 explorers in flight
+   at once**, root-category and submodule explorers counted together: launch
+   up to 4, keep the rest in an ordered queue, and start the next as each one
+   returns. Grounding rules from the document-module skill apply unchanged —
+   in particular, if any wave-1 category
+   (entities/plugins/services/hooks/events/…) was regenerated, the synthesis
+   categories (`extension-points.md`, `ai-integration.md`) must be regenerated
+   after them, grounded on the new files, even if their own source areas look
+   untouched in the diff.
 4. **Assemble.** Rebuild `metadata.json` for the target set, starting from
    the current set's (`name`, `human_name`, `type` stay — the importer keys
    the module on `name` and titles it from `human_name`): version =

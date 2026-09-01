@@ -114,9 +114,13 @@ these — **never guess, never silently redirect or proceed:**
   `submodule_of` key in step 7 (same rule as the contrib skill).
 
 If the script exits non-zero with `GATE FAILED` (no Drupal repo found, or an
-internal error), **stop and report its error** — do not spawn explorers, do
-not try to download by other means, and do not improvise a different path or
-search elsewhere on the filesystem.
+internal error), **the run is over — stop immediately.** Tell the user what
+the error says (typically: this repo does not contain a Drupal installation)
+and that they can re-run from inside a Drupal repo or pass the Drupal root
+explicitly. Do not spawn explorers, do not try to download by other means,
+and do **not** improvise: no `find`, no globbing, no walking ancestors or
+sibling directories, no `cd` elsewhere, no retrying the gate with other
+paths. Where Drupal lives is the user's decision, never yours.
 
 **Note the submodules.** Each `SUBMODULE=` line is a real submodule — its
 **machine name** and its **directory** (relative to `MODULE_ROOT`). Core
@@ -138,6 +142,19 @@ grounded in wave 1's files. Explorer C (the synthesis categories
 earlier file is on disk, and uses them all as its verified fact base. That
 sequencing is what keeps each later wave consistent with the facts the
 earlier waves already wrote.
+
+**Concurrency cap — never more than 4 explorer subagents in flight at once,
+for the whole run.** The cap counts every kind together
+(`drupal-module-explorer`, `drupal-submodule-explorer`, and any scoped
+follow-up) and applies in every wave. When a wave needs more than 4, do not
+launch them all: put the remaining ones in an ordered queue (batch order —
+D1–D4 running, D5, D6, … waiting) and start the next queued one each time a
+running explorer returns, so at most 4 stay in flight until the queue is
+empty. A follow-up explorer (missing file, `PROBLEM:`, discrepancy) joins the
+back of the same queue. If the runner can only launch in rounds, run rounds
+of at most 4 and wait for a round to finish before starting the next. Wave 1
+(A + B) and the synthesis wave (C alone) fit under the cap by construction;
+the submodule wave (step 4) and follow-ups are where it bites.
 
 Launch **two** `drupal-module-explorer` subagents — A and B — **in a single
 batch so they run concurrently**, each assigned a disjoint set of categories.
@@ -212,12 +229,17 @@ parent-module symbols, touches parent source only for what they don't cover,
 and refuses to run without that fact base.
 
 **Batch large sets**: split the submodules into batches of at most **8** and
-launch one `drupal-submodule-explorer` subagent per batch (D1, D2, …), **all
-in a single parallel batch**. The output files are disjoint
-(`submodules/<sub_machine>.md`), so batches never conflict.
+launch one `drupal-submodule-explorer` subagent per batch (D1, D2, …). The
+output files are disjoint (`submodules/<sub_machine>.md`), so batches never
+conflict — but **at most 4 batches run at once** (the concurrency cap from
+step 2): launch D1–D4 together, keep D5, D6, … in an ordered queue, and start
+the next queued batch each time a running one returns its manifest, until
+every batch has run. Do not wait for the whole first round to finish before
+starting D5 unless the runner cannot start subagents one at a time.
 
 - **Claude Code**: one `Task` (Agent) call per batch with
-  `subagent_type: drupal-submodule-explorer`, all in one turn.
+  `subagent_type: drupal-submodule-explorer` — up to 4 calls in the first
+  turn, then one new call per completed batch until the queue is empty.
 
 Prompt template per batch — substitute the real values as before:
 

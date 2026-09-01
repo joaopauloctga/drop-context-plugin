@@ -200,7 +200,10 @@ directory (a scratch dir, named `audit-$MODULE-$VERSION.md`) — never inside
 If the user wants confirmed errors fixed after seeing the report: spawn **one**
 follow-up explorer per affected file, scoped to that file, passing the
 disputed point(s) verbatim with your `path:line` evidence — the same
-discrepancy protocol the document skill uses. Route by file type:
+discrepancy protocol the document skill uses. Its concurrency cap applies
+too: **never more than 4 explorers in flight at once** — when more files
+need fixing, queue the rest in report order and start the next as each one
+returns. Route by file type:
 `drupal-module-explorer` for a category file, `drupal-submodule-explorer` for
 a `submodules/<sub>.md` file (give it just that one submodule; it grounds
 itself in the category docs, which exist in any audited set). Then re-run

@@ -926,3 +926,18 @@ a regex directly against that value — under a stricter/different YAML loader
 that resolves timestamps, this would throw a TypeError instead of matching.
 Fix: quote the value in the template (`generated_at: "2026-08-29T17:24:19Z"`)
 so it's unambiguously a string everywhere it's consumed.
+
+### Gaps found by the drop-context-developer test-drive (consumer side)
+
+*Added 2026-08-30, from the first plan-mode test of the `drop-context-developer`
+agent (see `plans/drop-context-developer-agent.md` §8b) against drupal-site.*
+
+- **`Core/Cache` is not in the core-libraries catalog** — `list_core_libraries
+  "cache"` returns 0, so `Cache::invalidateTags()` fell back to pretraining
+  (validated via drush). High-traffic API; candidate for the next
+  `/drop-context:document-core-library` run.
+- **dc-flag docs don't say whether Flag invalidates the flagged entity's render
+  cache tags** on flag/unflag — a consumer had to write a defensive subscriber.
+  Worth a "cache tags on flagging" note in use.md/theme.md next regeneration.
+- Generated SKILL.md reference indexes could state which reference owns
+  "where does the action link render" (use vs configure vs theme).

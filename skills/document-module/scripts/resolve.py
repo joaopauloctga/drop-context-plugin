@@ -232,8 +232,9 @@ def resolve_drupal_root(explicit: Path | None, repo_hint: Path | None, start: Pa
 
     raise GateError(
         f"could not find a Drupal docroot (core/lib/Drupal.php) from {start} or "
-        "its ancestors, and no composer.json pointed at one. Run this from inside "
-        "a Drupal repo, or pass --drupal-root <dir> explicitly."
+        "its ancestors, and no composer.json pointed at one — this directory "
+        "does not contain a Drupal installation. Ask the USER to re-run from "
+        "inside a Drupal repo, or to pass --drupal-root <dir> explicitly."
     )
 
 
@@ -670,6 +671,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except GateError as exc:
         print(f"GATE FAILED: {exc}", file=sys.stderr)
+        print(
+            "AGENT-INSTRUCTION: STOP NOW. Do NOT search the filesystem for a "
+            "Drupal installation, do NOT cd elsewhere, do NOT retry with other "
+            "paths. Report the error above to the user and ask how to proceed; "
+            "only the user decides where Drupal is.",
+            file=sys.stderr,
+        )
         return 1
 
 

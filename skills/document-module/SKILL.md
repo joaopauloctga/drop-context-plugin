@@ -176,6 +176,19 @@ categories — Explorers A and B in parallel. When the GATE found submodules
 verified fact base. That sequencing is what keeps each later wave consistent
 with the facts the earlier waves already wrote.
 
+**Concurrency cap — never more than 4 explorer subagents in flight at once,
+for the whole run.** The cap counts every kind together
+(`drupal-module-explorer`, `drupal-submodule-explorer`, and any scoped
+follow-up) and applies in every wave. When a wave needs more than 4, do not
+launch them all: put the remaining ones in an ordered queue (batch order —
+D1–D4 running, D5, D6, … waiting) and start the next queued one each time a
+running explorer returns, so at most 4 stay in flight until the queue is
+empty. A follow-up explorer (missing file, `PROBLEM:`, discrepancy) joins the
+back of the same queue. If the runner can only launch in rounds, run rounds
+of at most 4 and wait for a round to finish before starting the next. Wave 1
+(A + B) and the synthesis wave (C alone) fit under the cap by construction;
+the submodule wave (step 4) and follow-ups are where it bites.
+
 Launch **two** `drupal-module-explorer` subagents — A and B — **in a single
 batch so they run concurrently**, each assigned a disjoint set of categories.
 Give both the same `MODULE_ROOT` and `OUTPUT_DIR`, the machine name, and the
@@ -253,12 +266,17 @@ required.)
 
 **Batch large sets.** One explorer cannot absorb a huge submodule set in a
 single context: split the in-scope submodules into batches of at most **8**
-and launch one `drupal-submodule-explorer` subagent per batch (D1, D2, …),
-**all in a single parallel batch**. The output files are disjoint
-(`submodules/<sub_machine>.md`), so batches never conflict.
+and launch one `drupal-submodule-explorer` subagent per batch (D1, D2, …).
+The output files are disjoint (`submodules/<sub_machine>.md`), so batches
+never conflict — but **at most 4 batches run at once** (the concurrency cap
+from step 2): launch D1–D4 together, keep D5, D6, … in an ordered queue, and
+start the next queued batch each time a running one returns its manifest,
+until every batch has run. Do not wait for the whole first round to finish
+before starting D5 unless the runner cannot start subagents one at a time.
 
 - **Claude Code**: one `Task` (Agent) call per batch with
-  `subagent_type: drupal-submodule-explorer`, all in one turn.
+  `subagent_type: drupal-submodule-explorer` — up to 4 calls in the first
+  turn, then one new call per completed batch until the queue is empty.
 
 Prompt template per batch — substitute the real values as before:
 

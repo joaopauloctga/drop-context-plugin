@@ -22,7 +22,8 @@ the `audit-docs` skill.
    by a scoped follow-up explorer *before* the submodule wave, because a
    wrong wave-1 fact propagates into every later file by construction.
 3. **Submodule wave** — `drupal-submodule-explorer` batches (≤8 submodules
-   each, parallel) run **after** wave 1: the agent is grounded by design —
+   each, at most 4 in flight at once — see the concurrency cap below) run
+   **after** wave 1: the agent is grounded by design —
    it requires the category files in OUTPUT_DIR and copies parent-symbol
    facts from them (targeted parent grep only as fallback), writes condensed
    `submodules/*.md`, and reports conflicts via `=== DISCREPANCIES ===`. A
@@ -31,6 +32,11 @@ the `audit-docs` skill.
    skipped submodules are recorded in `metadata.json` `submodules_skipped`.
    *(Sequencing changed 2026-08-17 — full-run A/B validation pending; the
    grounding mechanism itself is the one validated in runs 7–8.)*
+   **Concurrency cap (2026-08-31)** — no wave, in any document skill (and in
+   `add-release` / `audit-docs`' fix cycle), ever has more than 4 explorer
+   subagents in flight; a larger submodule/workstream set is queued in order
+   and drained as each explorer returns. Operational limit, not a quality
+   mechanism — it does not change what any explorer is asked to do.
 4. **Synthesis wave** — Explorer C (extension-points + ai-integration, the
    *synthesis* categories) runs last, reads all earlier files (submodules
    included) as its verified fact base, reads source only for the guidance
