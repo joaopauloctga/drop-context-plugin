@@ -1,7 +1,7 @@
 {
   "name": "drop-context",
   "description": "Turns the Drupal modules, core modules, and core framework libraries installed in your repo into AI-consumable documentation and versioned agent skills — read from your own source, with no network access outside the two release-maintenance skills.",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "author": {
     "name": "joaopauloctga"
   },
